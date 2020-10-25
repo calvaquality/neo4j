@@ -28,7 +28,7 @@ import org.neo4j.cypher.internal.expressions.Ands
 import org.neo4j.cypher.internal.expressions.Expression
 import org.neo4j.cypher.internal.expressions.FunctionInvocation
 import org.neo4j.cypher.internal.expressions.FunctionName
-import org.neo4j.cypher.internal.expressions.GetDegree
+import org.neo4j.cypher.internal.expressions.HasDegreeGreaterThan
 import org.neo4j.cypher.internal.expressions.LessThan
 import org.neo4j.cypher.internal.expressions.Namespace
 import org.neo4j.cypher.internal.expressions.SemanticDirection.OUTGOING
@@ -246,11 +246,11 @@ class WithPlanningIntegrationTest extends CypherFunSuite with LogicalPlanningTes
   }
 
   test("WHERE clause on WITH DISTINCT uses argument from previous WITH"){
-    val result = planFor( """
+    val result = planFor( normalizeNewLines("""
                       WITH 0.1 AS p
                       MATCH (n1)
                       WITH DISTINCT n1, p LIMIT 10 WHERE rand() < p
-                      RETURN n1""")._2
+                      RETURN n1"""))._2
 
     result should beLike {
       case
@@ -267,11 +267,11 @@ class WithPlanningIntegrationTest extends CypherFunSuite with LogicalPlanningTes
   }
 
   test("WHERE clause on WITH AGGREGATION uses argument from previous WITH"){
-    val result = planFor( """
+    val result = planFor( normalizeNewLines("""
                       WITH 0.1 AS p
                       MATCH (n1)
                       WITH count(n1) AS n, p WHERE rand() < p
-                      RETURN n""")._2
+                      RETURN n"""))._2
 
     result should beLike {
       case
@@ -322,7 +322,7 @@ class WithPlanningIntegrationTest extends CypherFunSuite with LogicalPlanningTes
       case
         Selection(ands,
         Limit(_,_,_)
-        ) if hasGetDegree(ands) => ()
+        ) if containsHasDegreeGreaterThan(ands) => ()
     }
   }
 
@@ -360,9 +360,9 @@ class WithPlanningIntegrationTest extends CypherFunSuite with LogicalPlanningTes
     }
   }
 
-  private def hasGetDegree(ands: Ands): Boolean = {
+  private def containsHasDegreeGreaterThan(ands: Ands): Boolean = {
     ands.treeExists {
-      case _: GetDegree => true
+      case _: HasDegreeGreaterThan => true
     }
   }
 }

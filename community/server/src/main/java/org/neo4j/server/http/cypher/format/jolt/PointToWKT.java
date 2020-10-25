@@ -17,21 +17,28 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
-package org.neo4j.kernel.database;
+package org.neo4j.server.http.cypher.format.jolt;
 
-import org.junit.jupiter.api.Test;
+import java.util.function.Function;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
+import org.neo4j.graphdb.spatial.Point;
 
-class DatabaseNameLogContextTest
+import static java.util.stream.Collectors.joining;
+
+final class PointToWKT implements Function<Point,String>
 {
-    @Test
-    void shouldFormatMessage()
+    @Override
+    public String apply( Point point )
     {
-        var databaseId = TestDatabaseIdRepository.randomNamedDatabaseId();
-
-        var formattedMessage = databaseId.formatMessage( "Hello there" );
-
-        assertEquals( String.format( "[%s/%s] Hello there", databaseId.name(), databaseId.databaseId().id() ), formattedMessage );
+        var coordinates = point.getCoordinate().getCoordinate();
+        var wkt = new StringBuilder()
+                .append( "SRID=" )
+                .append( point.getCRS().getCode() )
+                .append( ";POINT" )
+                .append( coordinates.size() == 3 ? " Z " : "" )
+                .append( "(" )
+                .append( coordinates.stream().map( String::valueOf ).collect( joining( " " ) ) )
+                .append( ")" );
+        return wkt.toString();
     }
 }

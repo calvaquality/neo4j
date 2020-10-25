@@ -17,6 +17,10 @@
 package org.neo4j.cypher.internal.parser
 
 import org.neo4j.cypher.internal.ast
+import org.neo4j.cypher.internal.ast.IndefiniteWait
+import org.neo4j.cypher.internal.ast.NoWait
+import org.neo4j.cypher.internal.ast.TimeoutAfter
+import org.neo4j.cypher.internal.ast.WaitUntilComplete
 import org.neo4j.cypher.internal.expressions.Parameter
 import org.neo4j.cypher.internal.util.InputPosition
 import org.parboiled.scala.Parser
@@ -50,7 +54,7 @@ trait Statement extends Parser
   }
 
   def UserAndRoleAdministrationCommand: Rule1[ast.AdministrationCommand] = rule("Security role and user administration statement") {
-    optional(keyword("CATALOG")) ~~ (ShowRoles | CreateRole | DropRole | ShowUsers | CreateUser | DropUser | AlterUser | SetOwnPassword)
+    optional(keyword("CATALOG")) ~~ (ShowRoles | CreateRole | DropRole | ShowUsers | ShowCurrentUser | CreateUser | DropUser | AlterUser | SetOwnPassword)
   }
 
   def PrivilegeAdministrationCommand: Rule1[ast.AdministrationCommand] = rule("Security privilege administration statement") {
@@ -73,6 +77,10 @@ trait Statement extends Parser
 
   def ShowUsers: Rule1[ast.ShowUsers] = rule("SHOW USERS") {
     keyword("SHOW USERS") ~~ optional(ShowCommandClauses) ~~>> (ast.ShowUsers(_))
+  }
+
+  def ShowCurrentUser: Rule1[ast.ShowCurrentUser] = rule("SHOW CURRENT USER") {
+    keyword("SHOW CURRENT USER") ~~ optional(ShowCommandClauses) ~~>> (ast.ShowCurrentUser(_))
   }
 
   def CreateUser: Rule1[ast.CreateUser] = rule("CREATE USER") {
@@ -215,8 +223,8 @@ trait Statement extends Parser
   }
 
   // Privilege commands
-
-  def ShowPrivileges: Rule1[ast.ShowPrivileges] = rule("SHOW PRIVILEGES") {
+  def ShowPrivileges: Rule1[ast.ReadAdministrationCommand] = rule("SHOW PRIVILEGES") {
+    group(keyword("SHOW") ~~ ScopeForShowPrivileges ~~ asCommand ~~ optional(ShowCommandClauses) ~~>> ((scope, revoke, yld) => ast.ShowPrivilegeCommands(scope, revoke, yld))) |
     group(keyword("SHOW") ~~ ScopeForShowPrivileges ~~ optional(ShowCommandClauses) ~~>> ((scope, yld) => ast.ShowPrivileges(scope, yld)))
   }
 
@@ -225,6 +233,11 @@ trait Statement extends Parser
     group(UserKeyword ~~ SymbolicNameOrStringParameterList ~~ keyword("PRIVILEGES")) ~~>> (ast.ShowUsersPrivileges(_)) |
     group(UserKeyword ~~ keyword("PRIVILEGES")) ~~~> ast.ShowUserPrivileges(None) |
     optional(keyword("ALL")) ~~ keyword("PRIVILEGES") ~~~> ast.ShowAllPrivileges()
+  }
+
+  private def asCommand: Rule1[Boolean] = rule("AS COMMANDS") {
+    group(keyword("AS") ~~ CommandKeyword) ~> (_ => false) |
+    group(keyword("AS REVOKE") ~~ CommandKeyword) ~> (_ => true)
   }
 
   //` ... ON DBMS TO role`
@@ -341,13 +354,25 @@ trait Statement extends Parser
   }
 
   private def QualifiedDbmsAction: Rule2[List[ast.PrivilegeQualifier], ast.AdminAction] = rule("qualified dbms action") {
-    keyword("EXECUTE") ~~ ProcedureKeyword ~~ ProcedureIdentifier ~> (_ => ast.ExecuteProcedureAction) |
-    keyword("EXECUTE BOOSTED") ~~ ProcedureKeyword ~~ ProcedureIdentifier ~> (_ => ast.ExecuteBoostedProcedureAction)
+    keyword("EXECUTE") ~~ Procedure ~> (_ => ast.ExecuteProcedureAction) |
+    keyword("EXECUTE BOOSTED") ~~ Procedure ~> (_ => ast.ExecuteBoostedProcedureAction) |
+    keyword("EXECUTE") ~~ Function ~> (_ => ast.ExecuteFunctionAction) |
+    keyword("EXECUTE BOOSTED") ~~ Function ~> (_ => ast.ExecuteBoostedFunctionAction)
   }
+
+  private def Procedure: Rule1[List[ast.PrivilegeQualifier]] = ProcedureKeyword ~~ ProcedureIdentifier
 
   private def ProcedureIdentifier: Rule1[List[ast.PrivilegeQualifier]] = rule("procedure identifier") {
     oneOrMore(group(GlobbedNamespace ~ GlobbedProcedureName), separator = CommaSep) ~~>>
       { procedures => pos => procedures.map(p => ast.ProcedureQualifier(p._1, p._2)(pos)) }
+  }
+
+  private def Function: Rule1[List[ast.PrivilegeQualifier]] =
+    group(optional(keyword("USER") ~~ optional(keyword("DEFINED"))) ~~ FunctionKeyword) ~~ FunctionIdentifier
+
+  private def FunctionIdentifier: Rule1[List[ast.PrivilegeQualifier]] = rule("function identifier") {
+    oneOrMore(group(GlobbedNamespace ~ GlobbedFunctionName), separator = CommaSep) ~~>>
+      { functions => pos => functions.map(p => ast.FunctionQualifier(p._1, p._2)(pos)) }
   }
 
   // Database specific
@@ -461,17 +486,17 @@ trait Statement extends Parser
   }
 
   def CreateDatabase: Rule1[ast.CreateDatabase] = rule("CREATE DATABASE") {
-    group(keyword("CREATE OR REPLACE DATABASE") ~~ SymbolicDatabaseNameOrStringParameter ~~ keyword("IF NOT EXISTS")) ~~>> (ast.CreateDatabase(_, ast.IfExistsInvalidSyntax)) |
-    group(keyword("CREATE OR REPLACE DATABASE") ~~ SymbolicDatabaseNameOrStringParameter) ~~>> (ast.CreateDatabase(_, ast.IfExistsReplace)) |
-    group(keyword("CREATE DATABASE") ~~ SymbolicDatabaseNameOrStringParameter ~~ keyword("IF NOT EXISTS")) ~~>> (ast.CreateDatabase(_, ast.IfExistsDoNothing)) |
-    group(keyword("CREATE DATABASE") ~~ SymbolicDatabaseNameOrStringParameter) ~~>> (ast.CreateDatabase(_, ast.IfExistsThrowError))
+    group(keyword("CREATE OR REPLACE DATABASE") ~~ SymbolicDatabaseNameOrStringParameter ~~ keyword("IF NOT EXISTS") ~~ WaitUntilComplete) ~~>> (ast.CreateDatabase(_, ast.IfExistsInvalidSyntax, _)) |
+    group(keyword("CREATE OR REPLACE DATABASE") ~~ SymbolicDatabaseNameOrStringParameter ~~ WaitUntilComplete) ~~>> (ast.CreateDatabase(_, ast.IfExistsReplace, _)) |
+    group(keyword("CREATE DATABASE") ~~ SymbolicDatabaseNameOrStringParameter ~~ keyword("IF NOT EXISTS") ~~ WaitUntilComplete) ~~>> (ast.CreateDatabase(_, ast.IfExistsDoNothing, _)) |
+    group(keyword("CREATE DATABASE") ~~ SymbolicDatabaseNameOrStringParameter ~~ WaitUntilComplete) ~~>> (ast.CreateDatabase(_, ast.IfExistsThrowError, _))
   }
 
   def DropDatabase: Rule1[ast.DropDatabase] = rule("DROP DATABASE") {
-    group(keyword("DROP DATABASE") ~~ SymbolicDatabaseNameOrStringParameter ~~ keyword("IF EXISTS") ~~ DataAction) ~~>>
-      ((dbName, dataAction) => ast.DropDatabase(dbName, ifExists = true, dataAction)) |
-    group(keyword("DROP DATABASE") ~~ SymbolicDatabaseNameOrStringParameter ~~ DataAction) ~~>>
-      ((dbName, dataAction) => ast.DropDatabase(dbName, ifExists = false, dataAction))
+    group(keyword("DROP DATABASE") ~~ SymbolicDatabaseNameOrStringParameter ~~ keyword("IF EXISTS") ~~ DataAction ~~ WaitUntilComplete) ~~>>
+      ((dbName, dataAction, wait) => ast.DropDatabase(dbName, ifExists = true, dataAction, wait)) |
+    group(keyword("DROP DATABASE") ~~ SymbolicDatabaseNameOrStringParameter ~~ DataAction ~~ WaitUntilComplete) ~~>>
+      ((dbName, dataAction, wait) => ast.DropDatabase(dbName, ifExists = false, dataAction, wait))
   }
 
   private def DataAction: Rule1[ast.DropDatabaseAdditionalAction] = rule("data action on drop database") {
@@ -480,11 +505,11 @@ trait Statement extends Parser
   }
 
   def StartDatabase: Rule1[ast.StartDatabase] = rule("START DATABASE") {
-    group(keyword("START DATABASE") ~~ SymbolicDatabaseNameOrStringParameter) ~~>> (ast.StartDatabase(_))
+    group(keyword("START DATABASE") ~~ SymbolicDatabaseNameOrStringParameter ~~ WaitUntilComplete) ~~>> (ast.StartDatabase(_, _))
   }
 
   def StopDatabase: Rule1[ast.StopDatabase] = rule("STOP DATABASE") {
-    group(keyword("STOP DATABASE") ~~ SymbolicDatabaseNameOrStringParameter) ~~>> (ast.StopDatabase(_))
+    group(keyword("STOP DATABASE") ~~ SymbolicDatabaseNameOrStringParameter ~~ WaitUntilComplete) ~~>> (ast.StopDatabase(_, _))
   }
 
   // Graph/View commands
@@ -535,6 +560,13 @@ trait Statement extends Parser
     (oneOrMore(WS ~~ SymbolicDatabaseNameOrStringParameter ~~ WS, separator = ",") memoMismatches).suppressSubnodes
   }
 
+  private def WaitUntilComplete: Rule1[WaitUntilComplete] = rule("WAIT [n [SEC[OND[S]]]] | NOWAIT") {
+    group(keyword("WAIT") ~~ UnsignedIntegerLiteral ~~ optional(keyword("SEC") | keyword("SECOND") | keyword("SECONDS")) ~~>
+      (timeout => TimeoutAfter(timeout.value))) |
+      keyword("WAIT") ~> (_ => IndefiniteWait) |
+      optional(keyword("NOWAIT")) ~> (_ => NoWait)
+  }
+
   // Keyword methods
 
   private def RoleKeyword: Rule0 = keyword("ROLES") | keyword("ROLE")
@@ -547,7 +579,11 @@ trait Statement extends Parser
 
   private def ProcedureKeyword: Rule0 = keyword("PROCEDURES") | keyword("PROCEDURE")
 
+  private def FunctionKeyword: Rule0 = keyword("FUNCTIONS") | keyword("FUNCTION")
+
   private def AdminKeyword: Rule0 = keyword("ADMINISTRATOR") | keyword("ADMIN")
+
+  private def CommandKeyword: Rule0 = keyword("COMMANDS") | keyword("COMMAND")
 
   // Database specific
 

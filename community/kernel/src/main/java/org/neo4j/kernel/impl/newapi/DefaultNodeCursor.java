@@ -247,6 +247,14 @@ class DefaultNodeCursor extends TraceableCursor implements NodeCursor
         return degrees.getTotal();
     }
 
+    @Override
+    public int degreeWithMax( int maxDegree, RelationshipSelection selection )
+    {
+        SingleDegree degrees = new SingleDegree( maxDegree );
+        fillDegrees( selection, degrees );
+        return Math.min(degrees.getTotal(), maxDegree);
+    }
+
     private void fillDegrees( RelationshipSelection selection, Degrees.Mutator degrees )
     {
         boolean hasChanges = hasChanges();
@@ -274,7 +282,10 @@ class DefaultNodeCursor extends TraceableCursor implements NodeCursor
                     int outgoing = selection.test( RelationshipDirection.OUTGOING ) ? nodeTxState.augmentDegree( RelationshipDirection.OUTGOING, 0, type ) : 0;
                     int incoming = selection.test( RelationshipDirection.INCOMING ) ? nodeTxState.augmentDegree( RelationshipDirection.INCOMING, 0, type ) : 0;
                     int loop = selection.test( RelationshipDirection.LOOP ) ? nodeTxState.augmentDegree( RelationshipDirection.LOOP, 0, type ) : 0;
-                    degrees.add( type, outgoing, incoming, loop );
+                    if ( !degrees.add( type, outgoing, incoming, loop ) )
+                    {
+                        return;
+                    }
                 }
             }
         }

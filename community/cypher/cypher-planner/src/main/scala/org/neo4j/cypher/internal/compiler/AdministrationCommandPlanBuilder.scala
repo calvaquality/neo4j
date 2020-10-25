@@ -48,6 +48,7 @@ import org.neo4j.cypher.internal.ast.IfExistsDo
 import org.neo4j.cypher.internal.ast.IfExistsDoNothing
 import org.neo4j.cypher.internal.ast.IfExistsReplace
 import org.neo4j.cypher.internal.ast.NoResource
+import org.neo4j.cypher.internal.ast.NoWait
 import org.neo4j.cypher.internal.ast.Query
 import org.neo4j.cypher.internal.ast.RemovePrivilegeAction
 import org.neo4j.cypher.internal.ast.RemoveRoleAction
@@ -61,8 +62,10 @@ import org.neo4j.cypher.internal.ast.RevokeType
 import org.neo4j.cypher.internal.ast.SetOwnPassword
 import org.neo4j.cypher.internal.ast.SetPasswordsAction
 import org.neo4j.cypher.internal.ast.SetUserStatusAction
+import org.neo4j.cypher.internal.ast.ShowCurrentUser
 import org.neo4j.cypher.internal.ast.ShowDatabase
 import org.neo4j.cypher.internal.ast.ShowPrivilegeAction
+import org.neo4j.cypher.internal.ast.ShowPrivilegeCommands
 import org.neo4j.cypher.internal.ast.ShowPrivileges
 import org.neo4j.cypher.internal.ast.ShowRoleAction
 import org.neo4j.cypher.internal.ast.ShowRoles
@@ -75,6 +78,7 @@ import org.neo4j.cypher.internal.ast.StartDatabase
 import org.neo4j.cypher.internal.ast.StartDatabaseAction
 import org.neo4j.cypher.internal.ast.StopDatabase
 import org.neo4j.cypher.internal.ast.StopDatabaseAction
+import org.neo4j.cypher.internal.ast.WaitUntilComplete
 import org.neo4j.cypher.internal.ast.prettifier.ExpressionStringifier
 import org.neo4j.cypher.internal.ast.prettifier.Prettifier
 import org.neo4j.cypher.internal.ast.semantics.SemanticCheckResult
@@ -88,6 +92,7 @@ import org.neo4j.cypher.internal.frontend.phases.CompilationPhaseTracer.Compilat
 import org.neo4j.cypher.internal.frontend.phases.Condition
 import org.neo4j.cypher.internal.frontend.phases.Phase
 import org.neo4j.cypher.internal.logical.plans
+import org.neo4j.cypher.internal.logical.plans.DatabaseAdministrationLogicalPlan
 import org.neo4j.cypher.internal.logical.plans.LogicalPlan
 import org.neo4j.cypher.internal.logical.plans.PrivilegePlan
 import org.neo4j.cypher.internal.logical.plans.QualifiedName
@@ -128,9 +133,18 @@ case object AdministrationCommandPlanBuilder extends Phase[PlannerContext, BaseS
       case _ => plans.AssertDbmsAdmin(CreateRoleAction)
     }
 
+    def wrapInWait(logicalPlan: DatabaseAdministrationLogicalPlan, databaseName: Either[String,Parameter],
+                   waitUntilComplete: WaitUntilComplete): DatabaseAdministrationLogicalPlan = waitUntilComplete match {
+      case NoWait => logicalPlan
+      case _ =>  plans.WaitForCompletion(logicalPlan, databaseName, waitUntilComplete)
+    }
+
     val maybeLogicalPlan: Option[LogicalPlan] = from.statement() match {
       // SHOW USERS
-      case su @ ShowUsers(_,_) => Some(plans.ShowUsers(plans.AssertDbmsAdmin(ShowUserAction), su.defaultColumnNames, su.yields, su.returns))
+      case su: ShowUsers => Some(plans.ShowUsers(plans.AssertDbmsAdmin(ShowUserAction), su.defaultColumnNames, su.yields, su.returns))
+
+      // SHOW CURRENT USER
+      case su: ShowCurrentUser => Some(plans.ShowCurrentUser(su.defaultColumnNames, su.yields, su.returns))
 
       // CREATE [OR REPLACE] USER foo [IF NOT EXISTS] WITH [PLAINTEXT | ENCRYPTED] PASSWORD password
       case c@CreateUser(userName, isEncryptedPassword, initialPassword, requirePasswordChange, suspended, ifExistsDo) =>
@@ -310,13 +324,13 @@ case object AdministrationCommandPlanBuilder extends Phase[PlannerContext, BaseS
         Some(plans.LogSystemCommand(plan, prettifier.asString(c)))
 
       // SHOW USER user PRIVILEGES
-      case sp @ ShowPrivileges(scope: ShowUserPrivileges, _,_) =>
+      case sp @ ShowPrivileges(scope: ShowUserPrivileges, _, _) =>
         val user = scope.user
         val source = if (user.isDefined) Some(plans.AssertDbmsAdminOrSelf(user.get, Seq(ShowPrivilegeAction, ShowUserAction))) else None
         Some(plans.ShowPrivileges(source, scope, sp.defaultColumnNames, sp.yields, sp.returns))
 
       // SHOW USERS user1, user2 PRIVILEGES
-      case sp @ ShowPrivileges(scope: ShowUsersPrivileges, _,_) =>
+      case sp @ ShowPrivileges(scope: ShowUsersPrivileges, _, _) =>
         val (newScope, source) = {
           val users = scope.users
           if (users.size > 1) (scope, Some(plans.AssertDbmsAdmin(Seq(ShowPrivilegeAction, ShowUserAction))))
@@ -325,15 +339,34 @@ case object AdministrationCommandPlanBuilder extends Phase[PlannerContext, BaseS
         Some(plans.ShowPrivileges(source, newScope, sp.defaultColumnNames, sp.yields, sp.returns))
 
       // SHOW [ALL | ROLE role | ROLES role1, role2] PRIVILEGES
-      case sp @ ShowPrivileges(scope, _,_) =>
+      case sp @ ShowPrivileges(scope, _, _) =>
         Some(plans.ShowPrivileges(Some(plans.AssertDbmsAdmin(ShowPrivilegeAction)), scope, sp.defaultColumnNames, sp.yields, sp.returns))
+
+      // SHOW USER user PRIVILEGES AS [REVOKE] COMMAND
+      case sp @ ShowPrivilegeCommands(scope: ShowUserPrivileges, asRevoke, _,_) =>
+        val user = scope.user
+        val source = if (user.isDefined) Some(plans.AssertDbmsAdminOrSelf(user.get, Seq(ShowPrivilegeAction, ShowUserAction))) else None
+        Some(plans.ShowPrivilegeCommands(source, scope, asRevoke, sp.defaultColumnNames, sp.yields, sp.returns))
+
+      // SHOW USERS user1, user2 PRIVILEGES AS [REVOKE] COMMAND
+      case sp @ ShowPrivilegeCommands(scope: ShowUsersPrivileges, asRevoke, _, _) =>
+        val (newScope, source) = {
+          val users = scope.users
+          if (users.size > 1) (scope, Some(plans.AssertDbmsAdmin(Seq(ShowPrivilegeAction, ShowUserAction))))
+          else (ShowUserPrivileges(Some(users.head))(scope.position), Some(plans.AssertDbmsAdminOrSelf(users.head, Seq(ShowPrivilegeAction, ShowUserAction))))
+        }
+        Some(plans.ShowPrivilegeCommands(source, newScope, asRevoke, sp.defaultColumnNames, sp.yields, sp.returns))
+
+      // SHOW [ALL | ROLE role | ROLES role1, role2] PRIVILEGES AS [REVOKE] COMMAND
+      case sp @ ShowPrivilegeCommands(scope, asRevoke, _, returns) =>
+        Some(plans.ShowPrivilegeCommands(Some(plans.AssertDbmsAdmin(ShowPrivilegeAction)), scope, asRevoke, sp.defaultColumnNames, sp.yields, sp.returns))
 
       // SHOW DATABASES | SHOW DEFAULT DATABASE | SHOW DATABASE foo
       case sd @ ShowDatabase(scope, _,_) =>
         Some(plans.ShowDatabase(scope, sd.defaultColumnNames, sd.yields, sd.returns))
 
       // CREATE [OR REPLACE] DATABASE foo [IF NOT EXISTS]
-      case CreateDatabase(dbName, ifExistsDo) =>
+      case CreateDatabase(dbName, ifExistsDo, waitUntilComplete) =>
         val source = ifExistsDo match {
           case IfExistsReplace =>
             plans.DropDatabase(plans.AssertNotBlocked(plans.AssertDbmsAdmin(Seq(DropDatabaseAction, CreateDatabaseAction)), CreateDatabaseAction), dbName, DestroyData)
@@ -344,23 +377,24 @@ case object AdministrationCommandPlanBuilder extends Phase[PlannerContext, BaseS
 
           case _ => plans.AssertNotBlocked(plans.AssertDbmsAdmin(CreateDatabaseAction), CreateDatabaseAction)
         }
-        Some(plans.EnsureValidNumberOfDatabases(plans.CreateDatabase(source, dbName)))
+        Some(wrapInWait(plans.EnsureValidNumberOfDatabases(plans.CreateDatabase(source, dbName)), dbName, waitUntilComplete))
 
       // DROP DATABASE foo [IF EXISTS] [DESTROY | DUMP DATA]
-      case DropDatabase(dbName, ifExists, additionalAction) =>
+      case DropDatabase(dbName, ifExists, additionalAction, waitUntilComplete) =>
         val checkAllowed = plans.AssertNotBlocked(plans.AssertDbmsAdmin(DropDatabaseAction), DropDatabaseAction)
         val source = if (ifExists) plans.DoNothingIfNotExists(checkAllowed, "Database", dbName, s => new NormalizedDatabaseName(s).name()) else checkAllowed
-        Some(plans.DropDatabase(plans.EnsureValidNonSystemDatabase(source, dbName, "delete"), dbName, additionalAction))
+        Some(wrapInWait(plans.DropDatabase(plans.EnsureValidNonSystemDatabase(source, dbName, "delete"), dbName, additionalAction), dbName, waitUntilComplete))
 
       // START DATABASE foo
-      case StartDatabase(dbName) =>
+      case StartDatabase(dbName, waitUntilComplete) =>
         val checkAllowed = plans.AssertNotBlocked(plans.AssertDatabaseAdmin(StartDatabaseAction, dbName), StartDatabaseAction)
-        Some(plans.StartDatabase(checkAllowed, dbName))
+        Some(wrapInWait(plans.StartDatabase(checkAllowed, dbName), dbName, waitUntilComplete))
 
       // STOP DATABASE foo
-      case StopDatabase(dbName) =>
+      case StopDatabase(dbName, waitUntilComplete) =>
         val checkAllowed = plans.AssertNotBlocked(plans.AssertDatabaseAdmin(StopDatabaseAction, dbName), StopDatabaseAction)
-        Some(plans.StopDatabase(plans.EnsureValidNonSystemDatabase(checkAllowed, dbName, "stop"), dbName))
+        Some(wrapInWait(plans.StopDatabase(
+          plans.EnsureValidNonSystemDatabase(checkAllowed, dbName, "stop"), dbName), dbName, waitUntilComplete))
 
       // Global call: CALL foo.bar.baz("arg1", 2) // only if system procedure is allowed!
       case Query(None, SingleQuery(Seq(resolved@ResolvedCall(signature, _, _, _, _),Return(_,_,_,_,_,_)))) if signature.systemProcedure =>

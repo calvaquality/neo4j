@@ -22,8 +22,11 @@ package org.neo4j.cypher.internal
 import org.neo4j.common.DependencyResolver
 import org.neo4j.configuration.GraphDatabaseSettings
 import org.neo4j.configuration.helpers.NormalizedDatabaseName
+import org.neo4j.cypher.internal.ast.AdminAction
 import org.neo4j.cypher.internal.ast.DefaultDatabaseScope
 import org.neo4j.cypher.internal.ast.NamedDatabaseScope
+import org.neo4j.cypher.internal.ast.StartDatabaseAction
+import org.neo4j.cypher.internal.ast.StopDatabaseAction
 import org.neo4j.cypher.internal.compiler.phases.LogicalPlanState
 import org.neo4j.cypher.internal.logical.plans.AlterUser
 import org.neo4j.cypher.internal.logical.plans.AssertDatabaseAdmin
@@ -38,6 +41,7 @@ import org.neo4j.cypher.internal.logical.plans.EnsureNodeExists
 import org.neo4j.cypher.internal.logical.plans.LogSystemCommand
 import org.neo4j.cypher.internal.logical.plans.LogicalPlan
 import org.neo4j.cypher.internal.logical.plans.SetOwnPassword
+import org.neo4j.cypher.internal.logical.plans.ShowCurrentUser
 import org.neo4j.cypher.internal.logical.plans.ShowDatabase
 import org.neo4j.cypher.internal.logical.plans.ShowUsers
 import org.neo4j.cypher.internal.logical.plans.SystemProcedureCall
@@ -59,7 +63,6 @@ import org.neo4j.graphdb.Label
 import org.neo4j.graphdb.Node
 import org.neo4j.graphdb.RelationshipType.withName
 import org.neo4j.graphdb.Transaction
-import org.neo4j.graphdb.security.AuthorizationViolationException.PERMISSION_DENIED
 import org.neo4j.internal.kernel.api.security.AccessMode
 import org.neo4j.internal.kernel.api.security.AdminActionOnResource
 import org.neo4j.internal.kernel.api.security.AdminActionOnResource.DatabaseScope
@@ -105,19 +108,29 @@ case class CommunityAdministrationCommandRuntime(normalExecutionEngine: Executio
   // When the community commands are run within enterprise, this allows the enterprise commands to be chained
   private def fullLogicalToExecutable = extraLogicalToExecutable orElse logicalToExecutable
 
-  def logicalToExecutable: PartialFunction[LogicalPlan, (RuntimeContext, ParameterMapping) => ExecutionPlan] = {
+  val checkShowUserPrivilegesText = "Try executing SHOW USER PRIVILEGES to determine the missing or denied privileges. " +
+    "In case of missing privileges, they need to be granted (See GRANT). In case of denied privileges, they need to be revoked (See REVOKE) and granted."
 
+  def prettifyActionName (actions: AdminAction*) : String = {
+    actions.map{
+      case StartDatabaseAction => "START DATABASE"
+      case StopDatabaseAction => "STOP DATABASE"
+      case a => a.name
+    }.sorted.mkString(" and/or ")
+  }
+
+  def logicalToExecutable: PartialFunction[LogicalPlan, (RuntimeContext, ParameterMapping) => ExecutionPlan] = {
     // Check Admin Rights for DBMS commands
     case AssertDbmsAdmin(actions) => (_, _) =>
       AuthorizationPredicateExecutionPlan((_, securityContext) => actions.forall { action =>
         securityContext.allowsAdminAction(new AdminActionOnResource(ActionMapper.asKernelAction(action), DatabaseScope.ALL, Segment.ALL))
-      }, violationMessage = PERMISSION_DENIED)
+      }, violationMessage = "Permission denied for " + prettifyActionName(actions:_*) + ". " + checkShowUserPrivilegesText)  //sorting is important to keep error messages stable
 
     // Check Admin Rights for DBMS commands or self
     case AssertDbmsAdminOrSelf(user, actions) => (_, _) =>
       AuthorizationPredicateExecutionPlan((params, securityContext) => securityContext.subject().hasUsername(runtimeValue(user, params)) || actions.forall { action =>
         securityContext.allowsAdminAction(new AdminActionOnResource(ActionMapper.asKernelAction(action), DatabaseScope.ALL, Segment.ALL))
-      }, violationMessage = PERMISSION_DENIED)
+      }, violationMessage = "Permission denied for " + prettifyActionName(actions:_*) + ". " + checkShowUserPrivilegesText)  //sorting is important to keep error messages stable
 
     // Check that the specified user is not the logged in user (eg. for some CREATE/DROP/ALTER USER commands)
     case AssertNotCurrentUser(source, userName, verb, violationMessage) => (context, parameterMapping) =>
@@ -130,7 +143,7 @@ case class CommunityAdministrationCommandRuntime(normalExecutionEngine: Executio
     case AssertDatabaseAdmin(action, database) => (_, _) =>
       AuthorizationPredicateExecutionPlan((params, securityContext) =>
         securityContext.allowsAdminAction(new AdminActionOnResource(ActionMapper.asKernelAction(action), new DatabaseScope(runtimeValue(database, params)), Segment.ALL)),
-        violationMessage = PERMISSION_DENIED
+        violationMessage = "Permission denied for " + prettifyActionName(action) + ". " + checkShowUserPrivilegesText
       )
 
     // SHOW USERS
@@ -142,6 +155,21 @@ case class CommunityAdministrationCommandRuntime(normalExecutionEngine: Executio
           |""".stripMargin,
         VirtualValues.EMPTY_MAP,
         source = Some(fullLogicalToExecutable.applyOrElse(source, throwCantCompile).apply(context, parameterMapping))
+      )
+
+    // SHOW CURRENT USER
+    case ShowCurrentUser(symbols, yields, returns) => (_, _) =>
+      val currentUserKey = internalKey("currentUser")
+      SystemCommandExecutionPlan("ShowCurrentUser", normalExecutionEngine,
+        s"""MATCH (u:User)
+           |WITH u.name as user, null as roles, u.passwordChangeRequired AS passwordChangeRequired, null as suspended
+           |WHERE user = $$`$currentUserKey`
+           |${AdministrationShowCommandUtils.generateReturnClause(symbols, yields, returns, Seq("user"))}
+           |""".stripMargin,
+        VirtualValues.EMPTY_MAP,
+        parameterGenerator = (_, securityContext) => VirtualValues.map(
+          Array(currentUserKey),
+          Array(Values.utf8Value(securityContext.subject().username()))),
       )
 
     // CREATE [OR REPLACE] USER foo [IF NOT EXISTS] SET [PLAINTEXT | ENCRYPTED] PASSWORD 'password'

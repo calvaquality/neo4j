@@ -35,11 +35,11 @@ class SchemaCommandParserTest
   // Create index
 
   test("CREATE INDEX ON :Person(name)") {
-    yields(ast.CreateIndex(labelName("Person"), List(propertyKeyName("name"))))
+    yields(ast.CreateIndexOldSyntax(labelName("Person"), List(propertyKeyName("name"))))
   }
 
   test("CREATE INDEX ON :Person(name,age)") {
-    yields(ast.CreateIndex(labelName("Person"), List(propertyKeyName("name"), propertyKeyName("age"))))
+    yields(ast.CreateIndexOldSyntax(labelName("Person"), List(propertyKeyName("name"), propertyKeyName("age"))))
   }
 
   test("CREATE INDEX my_index ON :Person(name)") {
@@ -53,51 +53,84 @@ class SchemaCommandParserTest
   // new syntax
 
   test("CREATE INDEX FOR (n:Person) ON (n.name)") {
-    yields(ast.CreateIndexNewSyntax(varFor("n"), labelName("Person"), List(prop("n", "name")), None, IfExistsThrowError))
+    yields(ast.CreateIndex(varFor("n"), labelName("Person"), List(prop("n", "name")), None, IfExistsThrowError, Map.empty))
   }
 
   test("USE neo4j CREATE INDEX FOR (n:Person) ON (n.name)") {
-    yields(ast.CreateIndexNewSyntax(varFor("n"), labelName("Person"), List(prop("n", "name")), None, IfExistsThrowError, Some(use(varFor("neo4j")))))
+    yields(ast.CreateIndex(varFor("n"), labelName("Person"), List(prop("n", "name")), None, IfExistsThrowError, Map.empty, Some(use(varFor("neo4j")))))
   }
 
   test("CREATE INDEX FOR (n:Person) ON (n.name, n.age)") {
-    yields(ast.CreateIndexNewSyntax(varFor("n"), labelName("Person"), List(prop("n", "name"), prop("n", "age")), None, IfExistsThrowError))
+    yields(ast.CreateIndex(varFor("n"), labelName("Person"), List(prop("n", "name"), prop("n", "age")), None, IfExistsThrowError, Map.empty))
   }
 
-  test("CREATE INDEX my_index FOR (n:Person) ON (n.name)") {
-    yields(ast.CreateIndexNewSyntax(varFor("n"), labelName("Person"), List(prop("n", "name")), Some("my_index"), IfExistsThrowError))
+  test("CREATE BTREE INDEX my_index FOR (n:Person) ON (n.name)") {
+    yields(ast.CreateIndex(varFor("n"), labelName("Person"), List(prop("n", "name")), Some("my_index"), IfExistsThrowError, Map.empty))
   }
 
   test("CREATE INDEX my_index FOR (n:Person) ON (n.name, n.age)") {
-    yields(ast.CreateIndexNewSyntax(varFor("n"), labelName("Person"), List(prop("n", "name"), prop("n", "age")), Some("my_index"), IfExistsThrowError))
+    yields(ast.CreateIndex(varFor("n"), labelName("Person"), List(prop("n", "name"), prop("n", "age")), Some("my_index"), IfExistsThrowError, Map.empty))
   }
 
   test("CREATE INDEX `$my_index` FOR (n:Person) ON (n.name)") {
-    yields(ast.CreateIndexNewSyntax(varFor("n"), labelName("Person"), List(prop("n", "name")), Some("$my_index"), IfExistsThrowError))
+    yields(ast.CreateIndex(varFor("n"), labelName("Person"), List(prop("n", "name")), Some("$my_index"), IfExistsThrowError, Map.empty))
   }
 
   test("CREATE OR REPLACE INDEX FOR (n:Person) ON (n.name)") {
-    yields(ast.CreateIndexNewSyntax(varFor("n"), labelName("Person"), List(prop("n", "name")), None, IfExistsReplace))
+    yields(ast.CreateIndex(varFor("n"), labelName("Person"), List(prop("n", "name")), None, IfExistsReplace, Map.empty))
   }
 
   test("CREATE OR REPLACE INDEX my_index FOR (n:Person) ON (n.name, n.age)") {
-    yields(ast.CreateIndexNewSyntax(varFor("n"), labelName("Person"), List(prop("n", "name"), prop("n", "age")), Some("my_index"), IfExistsReplace))
+    yields(ast.CreateIndex(varFor("n"), labelName("Person"), List(prop("n", "name"), prop("n", "age")), Some("my_index"), IfExistsReplace, Map.empty))
   }
 
   test("CREATE OR REPLACE INDEX IF NOT EXISTS FOR (n:Person) ON (n.name)") {
-    yields(ast.CreateIndexNewSyntax(varFor("n"), labelName("Person"), List(prop("n", "name")), None, IfExistsInvalidSyntax))
+    yields(ast.CreateIndex(varFor("n"), labelName("Person"), List(prop("n", "name")), None, IfExistsInvalidSyntax, Map.empty))
   }
 
   test("CREATE OR REPLACE INDEX my_index IF NOT EXISTS FOR (n:Person) ON (n.name)") {
-    yields(ast.CreateIndexNewSyntax(varFor("n"), labelName("Person"), List(prop("n", "name")), Some("my_index"), IfExistsInvalidSyntax))
+    yields(ast.CreateIndex(varFor("n"), labelName("Person"), List(prop("n", "name")), Some("my_index"), IfExistsInvalidSyntax, Map.empty))
   }
 
   test("CREATE INDEX IF NOT EXISTS FOR (n:Person) ON (n.name, n.age)") {
-    yields(ast.CreateIndexNewSyntax(varFor("n"), labelName("Person"), List(prop("n", "name"), prop("n", "age")), None, IfExistsDoNothing))
+    yields(ast.CreateIndex(varFor("n"), labelName("Person"), List(prop("n", "name"), prop("n", "age")), None, IfExistsDoNothing, Map.empty))
   }
 
   test("CREATE INDEX my_index IF NOT EXISTS FOR (n:Person) ON (n.name)") {
-    yields(ast.CreateIndexNewSyntax(varFor("n"), labelName("Person"), List(prop("n", "name")), Some("my_index"), IfExistsDoNothing))
+    yields(ast.CreateIndex(varFor("n"), labelName("Person"), List(prop("n", "name")), Some("my_index"), IfExistsDoNothing, Map.empty))
+  }
+
+  test("CREATE INDEX FOR (n:Person) ON (n.name) OPTIONS {indexProvider : 'native-btree-1.0'}") {
+    yields(ast.CreateIndex(varFor("n"), labelName("Person"), List(prop("n", "name")),
+      None, IfExistsThrowError, Map("indexProvider" -> literalString("native-btree-1.0"))))
+  }
+
+  test("CREATE BTREE INDEX FOR (n:Person) ON (n.name) OPTIONS {indexProvider : 'lucene+native-3.0', indexConfig : {`spatial.cartesian.max`: [100.0,100.0], `spatial.cartesian.min`: [-100.0,-100.0] }}") {
+    yields(ast.CreateIndex(varFor("n"), labelName("Person"), List(prop("n", "name")), None, IfExistsThrowError,
+      Map("indexProvider" -> literalString("lucene+native-3.0"),
+          "indexConfig"   -> mapOf(
+            "spatial.cartesian.max" -> listOf(literalFloat(100.0), literalFloat(100.0)),
+            "spatial.cartesian.min" -> listOf(literalFloat(-100.0), literalFloat(-100.0))
+          )
+      )
+    ))
+  }
+
+  test("CREATE BTREE INDEX FOR (n:Person) ON (n.name) OPTIONS {indexConfig : {`spatial.wgs-84.max`: [60.0,60.0], `spatial.wgs-84.min`: [-40.0,-40.0] }}") {
+    yields(ast.CreateIndex(varFor("n"), labelName("Person"), List(prop("n", "name")), None, IfExistsThrowError,
+      Map("indexConfig" -> mapOf(
+          "spatial.wgs-84.max" -> listOf(literalFloat(60.0), literalFloat(60.0)),
+          "spatial.wgs-84.min" -> listOf(literalFloat(-40.0), literalFloat(-40.0))
+        ))
+    ))
+  }
+
+  test("CREATE INDEX FOR (n:Person) ON (n.name) OPTIONS {nonValidOption : 42}") {
+    yields(ast.CreateIndex(varFor("n"), labelName("Person"), List(prop("n", "name")), None, IfExistsThrowError, Map("nonValidOption" -> literalInt(42))))
+  }
+
+  test("CREATE INDEX my_index FOR (n:Person) ON (n.name) OPTIONS {}") {
+    yields(ast.CreateIndex(varFor("n"), labelName("Person"), List(prop("n", "name")), Some("my_index"), IfExistsThrowError, Map.empty))
   }
 
   test("CREATE INDEX $my_index FOR (n:Person) ON (n.name)") {
@@ -112,6 +145,13 @@ class SchemaCommandParserTest
     failsToParse
   }
 
+  test("CREATE INDEX FOR (n:Person) ON (n.name) {indexProvider : 'native-btree-1.0'}") {
+    failsToParse
+  }
+
+  test("CREATE INDEX FOR (n:Person) ON (n.name) OPTIONS") {
+    failsToParse
+  }
 
   // Drop index
 
@@ -145,52 +185,98 @@ class SchemaCommandParserTest
 
   // Create constraint
 
+  // Without name
+
   test("CREATE CONSTRAINT ON (node:Label) ASSERT (node.prop) IS NODE KEY") {
-    yields(ast.CreateNodeKeyConstraint(varFor("node"), labelName("Label"), Seq(prop("node", "prop")), None, IfExistsThrowError))
+    yields(ast.CreateNodeKeyConstraint(varFor("node"), labelName("Label"), Seq(prop("node", "prop")), None, IfExistsThrowError, Map.empty))
   }
 
   test("CREATE OR REPLACE CONSTRAINT ON (node:Label) ASSERT (node.prop) IS NODE KEY") {
-    yields(ast.CreateNodeKeyConstraint(varFor("node"), labelName("Label"), Seq(prop("node", "prop")), None, IfExistsReplace))
+    yields(ast.CreateNodeKeyConstraint(varFor("node"), labelName("Label"), Seq(prop("node", "prop")), None, IfExistsReplace, Map.empty))
   }
 
   test("CREATE CONSTRAINT IF NOT EXISTS ON (node:Label) ASSERT (node.prop) IS NODE KEY") {
-    yields(ast.CreateNodeKeyConstraint(varFor("node"), labelName("Label"), Seq(prop("node", "prop")), None, IfExistsDoNothing))
+    yields(ast.CreateNodeKeyConstraint(varFor("node"), labelName("Label"), Seq(prop("node", "prop")), None, IfExistsDoNothing, Map.empty))
   }
 
   test("CREATE CONSTRAINT ON (node:Label) ASSERT (node.prop1,node.prop2) IS NODE KEY") {
     yields(ast.CreateNodeKeyConstraint(varFor("node"), labelName("Label"),
-      Seq(prop("node", "prop1"), prop("node", "prop2")), None, IfExistsThrowError))
+      Seq(prop("node", "prop1"), prop("node", "prop2")), None, IfExistsThrowError, Map.empty))
   }
 
   test("CREATE OR REPLACE CONSTRAINT IF NOT EXISTS ON (node:Label) ASSERT (node.prop1,node.prop2) IS NODE KEY") {
     yields(ast.CreateNodeKeyConstraint(varFor("node"), labelName("Label"),
-      Seq(prop("node", "prop1"), prop("node", "prop2")), None, IfExistsInvalidSyntax))
+      Seq(prop("node", "prop1"), prop("node", "prop2")), None, IfExistsInvalidSyntax, Map.empty))
+  }
+
+  test("CREATE CONSTRAINT ON (node:Label) ASSERT (node.prop) IS NODE KEY OPTIONS {indexProvider : 'native-btree-1.0'}") {
+    yields(ast.CreateNodeKeyConstraint(varFor("node"), labelName("Label"), Seq(prop("node", "prop")),
+      None, IfExistsThrowError, Map("indexProvider" -> literalString("native-btree-1.0"))))
+  }
+
+  test("CREATE CONSTRAINT ON (node:Label) ASSERT (node.prop) IS NODE KEY OPTIONS {indexProvider : 'lucene+native-3.0', indexConfig : {`spatial.cartesian.max`: [100.0,100.0], `spatial.cartesian.min`: [-100.0,-100.0] }}") {
+    yields(ast.CreateNodeKeyConstraint(varFor("node"), labelName("Label"), Seq(prop("node", "prop")), None, IfExistsThrowError,
+      Map("indexProvider" -> literalString("lucene+native-3.0"),
+          "indexConfig"   -> mapOf(
+            "spatial.cartesian.max" -> listOf(literalFloat(100.0), literalFloat(100.0)),
+            "spatial.cartesian.min" -> listOf(literalFloat(-100.0), literalFloat(-100.0))
+          )
+      )
+    ))
+  }
+
+  test("CREATE CONSTRAINT ON (node:Label) ASSERT (node.prop) IS NODE KEY OPTIONS {indexConfig : {`spatial.wgs-84.max`: [60.0,60.0], `spatial.wgs-84.min`: [-40.0,-40.0] }}") {
+    yields(ast.CreateNodeKeyConstraint(varFor("node"), labelName("Label"), Seq(prop("node", "prop")), None, IfExistsThrowError,
+      Map("indexConfig" -> mapOf(
+        "spatial.wgs-84.max" -> listOf(literalFloat(60.0), literalFloat(60.0)),
+        "spatial.wgs-84.min" -> listOf(literalFloat(-40.0), literalFloat(-40.0))
+      ))
+    ))
+  }
+
+  test("CREATE CONSTRAINT ON (node:Label) ASSERT (node.prop) IS NODE KEY OPTIONS {nonValidOption : 42}") {
+    yields(ast.CreateNodeKeyConstraint(varFor("node"), labelName("Label"), Seq(prop("node", "prop")), None, IfExistsThrowError, Map("nonValidOption" -> literalInt(42))))
+  }
+
+  test("CREATE CONSTRAINT ON (node:Label) ASSERT (node.prop) IS NODE KEY OPTIONS {}") {
+    yields(ast.CreateNodeKeyConstraint(varFor("node"), labelName("Label"), Seq(prop("node", "prop")), None, IfExistsThrowError, Map.empty))
   }
 
   test("CREATE CONSTRAINT ON (node:Label) ASSERT node.prop IS UNIQUE") {
-    yields(ast.CreateUniquePropertyConstraint(varFor("node"), labelName("Label"), Seq(prop("node", "prop")), None, IfExistsThrowError))
+    yields(ast.CreateUniquePropertyConstraint(varFor("node"), labelName("Label"), Seq(prop("node", "prop")), None, IfExistsThrowError, Map.empty))
   }
 
   test("CREATE OR REPLACE CONSTRAINT ON (node:Label) ASSERT node.prop IS UNIQUE") {
-    yields(ast.CreateUniquePropertyConstraint(varFor("node"), labelName("Label"), Seq(prop("node", "prop")), None, IfExistsReplace))
+    yields(ast.CreateUniquePropertyConstraint(varFor("node"), labelName("Label"), Seq(prop("node", "prop")), None, IfExistsReplace, Map.empty))
   }
 
   test("CREATE CONSTRAINT IF NOT EXISTS ON (node:Label) ASSERT node.prop IS UNIQUE") {
-    yields(ast.CreateUniquePropertyConstraint(varFor("node"), labelName("Label"), Seq(prop("node", "prop")), None, IfExistsDoNothing))
+    yields(ast.CreateUniquePropertyConstraint(varFor("node"), labelName("Label"), Seq(prop("node", "prop")), None, IfExistsDoNothing, Map.empty))
   }
 
   test("CREATE CONSTRAINT ON (node:Label) ASSERT (node.prop) IS UNIQUE") {
-    yields(ast.CreateUniquePropertyConstraint(varFor("node"), labelName("Label"), Seq(prop("node", "prop")), None, IfExistsThrowError))
+    yields(ast.CreateUniquePropertyConstraint(varFor("node"), labelName("Label"), Seq(prop("node", "prop")), None, IfExistsThrowError, Map.empty))
   }
 
   test("CREATE CONSTRAINT ON (node:Label) ASSERT (node.prop1,node.prop2) IS UNIQUE") {
     yields(ast.CreateUniquePropertyConstraint(varFor("node"), labelName("Label"),
-      Seq(prop("node", "prop1"), prop("node", "prop2")), None, IfExistsThrowError))
+      Seq(prop("node", "prop1"), prop("node", "prop2")), None, IfExistsThrowError, Map.empty))
   }
 
   test("CREATE OR REPLACE CONSTRAINT IF NOT EXISTS ON (node:Label) ASSERT (node.prop1,node.prop2) IS UNIQUE") {
     yields(ast.CreateUniquePropertyConstraint(varFor("node"), labelName("Label"),
-      Seq(prop("node", "prop1"), prop("node", "prop2")), None, IfExistsInvalidSyntax))
+      Seq(prop("node", "prop1"), prop("node", "prop2")), None, IfExistsInvalidSyntax, Map.empty))
+  }
+
+  test("CREATE CONSTRAINT ON (node:Label) ASSERT (node.prop) IS UNIQUE OPTIONS {indexProvider : 'native-btree-1.0', indexConfig : {`spatial.wgs-84.max`: [60.0,60.0], `spatial.wgs-84.min`: [-40.0,-40.0]}}") {
+    yields(ast.CreateUniquePropertyConstraint(varFor("node"), labelName("Label"), Seq(prop("node", "prop")), None, IfExistsThrowError,
+      Map("indexProvider" -> literalString("native-btree-1.0"),
+          "indexConfig"   -> mapOf(
+            "spatial.wgs-84.max" -> listOf(literalFloat(60.0), literalFloat(60.0)),
+            "spatial.wgs-84.min" -> listOf(literalFloat(-40.0), literalFloat(-40.0))
+          )
+      )
+    ))
   }
 
   test("CREATE CONSTRAINT ON (node:Label) ASSERT EXISTS (node.prop)") {
@@ -237,11 +323,27 @@ class SchemaCommandParserTest
     failsToParse
   }
 
+  test("CREATE CONSTRAINT ON (node:Label) ASSERT (node.prop) IS NODE KEY {indexProvider : 'native-btree-1.0'}") {
+    failsToParse
+  }
+
+  test("CREATE CONSTRAINT ON (node:Label) ASSERT (node.prop) IS NODE KEY OPTIONS") {
+    failsToParse
+  }
+
   test("CREATE CONSTRAINT ON (node:Label) ASSERT node.prop.part IS UNIQUE") {
     failsToParse
   }
 
   test("CREATE CONSTRAINT ON (node:Label) ASSERT (node.prop.part) IS UNIQUE") {
+    failsToParse
+  }
+
+  test("CREATE CONSTRAINT ON (node:Label) ASSERT (node.prop) IS UNIQUE {indexProvider : 'native-btree-1.0'}") {
+    failsToParse
+  }
+
+  test("CREATE CONSTRAINT ON (node:Label) ASSERT (node.prop1, node.prop2) IS UNIQUE OPTIONS") {
     failsToParse
   }
 
@@ -253,54 +355,102 @@ class SchemaCommandParserTest
     failsToParse
   }
 
+  // With name
+
   test("USE neo4j CREATE CONSTRAINT my_constraint ON (node:Label) ASSERT (node.prop) IS NODE KEY") {
-    yields(ast.CreateNodeKeyConstraint(varFor("node"), labelName("Label"), Seq(prop("node", "prop")), Some("my_constraint"), IfExistsThrowError, Some(use(varFor("neo4j")))))
+    yields(ast.CreateNodeKeyConstraint(varFor("node"), labelName("Label"), Seq(prop("node", "prop")), Some("my_constraint"), IfExistsThrowError, Map.empty, Some(use(varFor("neo4j")))))
   }
 
   test("USE neo4j CREATE OR REPLACE CONSTRAINT my_constraint IF NOT EXISTS ON (node:Label) ASSERT (node.prop) IS NODE KEY") {
-    yields(ast.CreateNodeKeyConstraint(varFor("node"), labelName("Label"), Seq(prop("node", "prop")), Some("my_constraint"), IfExistsInvalidSyntax, Some(use(varFor("neo4j")))))
+    yields(ast.CreateNodeKeyConstraint(varFor("node"), labelName("Label"), Seq(prop("node", "prop")), Some("my_constraint"), IfExistsInvalidSyntax, Map.empty, Some(use(varFor("neo4j")))))
   }
 
   test("CREATE CONSTRAINT my_constraint ON (node:Label) ASSERT (node.prop1,node.prop2) IS NODE KEY") {
     yields(ast.CreateNodeKeyConstraint(varFor("node"), labelName("Label"),
-      Seq(prop("node", "prop1"), prop("node", "prop2")), Some("my_constraint"), IfExistsThrowError))
+      Seq(prop("node", "prop1"), prop("node", "prop2")), Some("my_constraint"), IfExistsThrowError, Map.empty))
   }
 
   test("CREATE OR REPLACE CONSTRAINT my_constraint ON (node:Label) ASSERT (node.prop1,node.prop2) IS NODE KEY") {
     yields(ast.CreateNodeKeyConstraint(varFor("node"), labelName("Label"),
-      Seq(prop("node", "prop1"), prop("node", "prop2")), Some("my_constraint"), IfExistsReplace))
+      Seq(prop("node", "prop1"), prop("node", "prop2")), Some("my_constraint"), IfExistsReplace, Map.empty))
   }
 
   test("CREATE CONSTRAINT my_constraint IF NOT EXISTS ON (node:Label) ASSERT (node.prop1,node.prop2) IS NODE KEY") {
     yields(ast.CreateNodeKeyConstraint(varFor("node"), labelName("Label"),
-      Seq(prop("node", "prop1"), prop("node", "prop2")), Some("my_constraint"), IfExistsDoNothing))
+      Seq(prop("node", "prop1"), prop("node", "prop2")), Some("my_constraint"), IfExistsDoNothing, Map.empty))
+  }
+
+  test("CREATE CONSTRAINT my_constraint ON (node:Label) ASSERT (node.prop) IS NODE KEY OPTIONS {indexProvider : 'native-btree-1.0', indexConfig : {`spatial.wgs-84.max`: [60.0,60.0], `spatial.wgs-84.min`: [-40.0,-40.0]}}") {
+    yields(ast.CreateNodeKeyConstraint(varFor("node"), labelName("Label"), Seq(prop("node", "prop")), Some("my_constraint"), IfExistsThrowError,
+      Map("indexProvider" -> literalString("native-btree-1.0"),
+          "indexConfig"   -> mapOf(
+            "spatial.wgs-84.max" -> listOf(literalFloat(60.0), literalFloat(60.0)),
+            "spatial.wgs-84.min" -> listOf(literalFloat(-40.0), literalFloat(-40.0))
+          )
+      )
+    ))
   }
 
   test("CREATE CONSTRAINT my_constraint ON (node:Label) ASSERT node.prop IS UNIQUE") {
-    yields(ast.CreateUniquePropertyConstraint(varFor("node"), labelName("Label"), Seq(prop("node", "prop")), Some("my_constraint"), IfExistsThrowError))
+    yields(ast.CreateUniquePropertyConstraint(varFor("node"), labelName("Label"), Seq(prop("node", "prop")), Some("my_constraint"), IfExistsThrowError, Map.empty))
   }
 
   test("CREATE CONSTRAINT my_constraint ON (node:Label) ASSERT (node.prop) IS UNIQUE") {
-    yields(ast.CreateUniquePropertyConstraint(varFor("node"), labelName("Label"), Seq(prop("node", "prop")), Some("my_constraint"), IfExistsThrowError))
+    yields(ast.CreateUniquePropertyConstraint(varFor("node"), labelName("Label"), Seq(prop("node", "prop")), Some("my_constraint"), IfExistsThrowError, Map.empty))
   }
 
   test("CREATE OR REPLACE CONSTRAINT my_constraint IF NOT EXISTS ON (node:Label) ASSERT (node.prop) IS UNIQUE") {
-    yields(ast.CreateUniquePropertyConstraint(varFor("node"), labelName("Label"), Seq(prop("node", "prop")), Some("my_constraint"), IfExistsInvalidSyntax))
+    yields(ast.CreateUniquePropertyConstraint(varFor("node"), labelName("Label"), Seq(prop("node", "prop")), Some("my_constraint"), IfExistsInvalidSyntax, Map.empty))
   }
 
   test("CREATE CONSTRAINT my_constraint ON (node:Label) ASSERT (node.prop1,node.prop2) IS UNIQUE") {
     yields(ast.CreateUniquePropertyConstraint(varFor("node"), labelName("Label"),
-      Seq(prop("node", "prop1"), prop("node", "prop2")), Some("my_constraint"), IfExistsThrowError))
+      Seq(prop("node", "prop1"), prop("node", "prop2")), Some("my_constraint"), IfExistsThrowError, Map.empty))
   }
 
   test("CREATE OR REPLACE CONSTRAINT my_constraint ON (node:Label) ASSERT (node.prop1,node.prop2) IS UNIQUE") {
     yields(ast.CreateUniquePropertyConstraint(varFor("node"), labelName("Label"),
-      Seq(prop("node", "prop1"), prop("node", "prop2")), Some("my_constraint"), IfExistsReplace))
+      Seq(prop("node", "prop1"), prop("node", "prop2")), Some("my_constraint"), IfExistsReplace, Map.empty))
   }
 
   test("CREATE CONSTRAINT my_constraint IF NOT EXISTS ON (node:Label) ASSERT (node.prop1,node.prop2) IS UNIQUE") {
     yields(ast.CreateUniquePropertyConstraint(varFor("node"), labelName("Label"),
-      Seq(prop("node", "prop1"), prop("node", "prop2")), Some("my_constraint"), IfExistsDoNothing))
+      Seq(prop("node", "prop1"), prop("node", "prop2")), Some("my_constraint"), IfExistsDoNothing, Map.empty))
+  }
+
+  test("CREATE CONSTRAINT my_constraint ON (node:Label) ASSERT (node.prop) IS UNIQUE OPTIONS {indexProvider : 'native-btree-1.0'}") {
+    yields(ast.CreateUniquePropertyConstraint(varFor("node"), labelName("Label"), Seq(prop("node", "prop")),
+      Some("my_constraint"), IfExistsThrowError, Map("indexProvider" -> literalString("native-btree-1.0"))))
+  }
+
+  test("CREATE CONSTRAINT my_constraint ON (node:Label) ASSERT (node.prop) IS UNIQUE OPTIONS {indexProvider : 'lucene+native-3.0', indexConfig : {`spatial.cartesian.max`: [100.0,100.0], `spatial.cartesian.min`: [-100.0,-100.0] }}") {
+    yields(ast.CreateUniquePropertyConstraint(varFor("node"), labelName("Label"), Seq(prop("node", "prop")), Some("my_constraint"), IfExistsThrowError,
+      Map("indexProvider" -> literalString("lucene+native-3.0"),
+          "indexConfig"   -> mapOf(
+            "spatial.cartesian.max" -> listOf(literalFloat(100.0), literalFloat(100.0)),
+            "spatial.cartesian.min" -> listOf(literalFloat(-100.0), literalFloat(-100.0))
+          )
+      )
+    ))
+  }
+
+  test("CREATE CONSTRAINT my_constraint ON (node:Label) ASSERT (node.prop) IS UNIQUE OPTIONS {indexConfig : {`spatial.wgs-84.max`: [60.0,60.0], `spatial.wgs-84.min`: [-40.0,-40.0] }}") {
+    yields(ast.CreateUniquePropertyConstraint(varFor("node"), labelName("Label"), Seq(prop("node", "prop")), Some("my_constraint"), IfExistsThrowError,
+      Map("indexConfig" -> mapOf(
+        "spatial.wgs-84.max" -> listOf(literalFloat(60.0), literalFloat(60.0)),
+        "spatial.wgs-84.min" -> listOf(literalFloat(-40.0), literalFloat(-40.0))
+      ))
+    ))
+  }
+
+  test("CREATE CONSTRAINT my_constraint ON (node:Label) ASSERT (node.prop) IS UNIQUE OPTIONS {nonValidOption : 42}") {
+    yields(ast.CreateUniquePropertyConstraint(varFor("node"), labelName("Label"), Seq(prop("node", "prop")),
+      Some("my_constraint"), IfExistsThrowError, Map("nonValidOption" -> literalInt(42))))
+  }
+
+  test("CREATE CONSTRAINT my_constraint ON (node:Label) ASSERT (node.prop1,node.prop2) IS UNIQUE OPTIONS {}") {
+    yields(ast.CreateUniquePropertyConstraint(varFor("node"), labelName("Label"), Seq(prop("node", "prop1"), prop("node", "prop2")),
+      Some("my_constraint"), IfExistsThrowError, Map.empty))
   }
 
   test("CREATE CONSTRAINT my_constraint ON (node:Label) ASSERT EXISTS (node.prop)") {
@@ -411,12 +561,13 @@ class SchemaCommandParserTest
     failsToParse
   }
 
-  // help method
+  // help methods
 
   private def propertyKeyName(name: String) = {
     expressions.PropertyKeyName(name)(pos)
   }
 
+  //noinspection SameParameterValue
   private def relTypeName(name: String) = {
     expressions.RelTypeName(name)(pos)
   }

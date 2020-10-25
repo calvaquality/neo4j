@@ -26,6 +26,7 @@ import org.neo4j.cypher.internal.ast.Return
 import org.neo4j.cypher.internal.ast.ReturnItems
 import org.neo4j.cypher.internal.ast.SingleQuery
 import org.neo4j.cypher.internal.ast.Where
+import org.neo4j.cypher.internal.ast.semantics.SemanticChecker
 import org.neo4j.cypher.internal.ast.semantics.SemanticTable
 import org.neo4j.cypher.internal.compiler.Neo4jCypherExceptionFactory
 import org.neo4j.cypher.internal.expressions.Equals
@@ -41,6 +42,7 @@ import org.neo4j.cypher.internal.expressions.StringLiteral
 import org.neo4j.cypher.internal.expressions.Variable
 import org.neo4j.cypher.internal.parser.ParserFixture.parser
 import org.neo4j.cypher.internal.planner.spi.PlanContext
+import org.neo4j.cypher.internal.rewriting.rewriters.normalizeHasLabelsAndHasType
 import org.neo4j.cypher.internal.util.LabelId
 import org.neo4j.cypher.internal.util.PropertyKeyId
 import org.neo4j.cypher.internal.util.RelTypeId
@@ -195,8 +197,10 @@ class ResolveTokensTest extends CypherFunSuite {
     }
   }
 
-  def parseTest(queryText: String)(f: Query => Unit) = test(queryText) { parser.parse(queryText, Neo4jCypherExceptionFactory(queryText, None)) match {
-    case query: Query => f(query)
-  }
+  def parseTest(queryText: String)(f: Query => Unit): Unit = test(queryText) {
+    val parsed = parser.parse(queryText, Neo4jCypherExceptionFactory(queryText, None))
+    normalizeHasLabelsAndHasType(SemanticChecker.check(parsed).state)(parsed) match {
+      case query: Query => f(query)
+    }
   }
 }

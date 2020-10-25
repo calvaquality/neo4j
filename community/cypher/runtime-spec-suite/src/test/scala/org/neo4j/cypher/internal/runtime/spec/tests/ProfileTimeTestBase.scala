@@ -44,7 +44,7 @@ abstract class ProfileTimeTestBase[CONTEXT <: RuntimeContext](edition: Edition[C
                                                              ) extends RuntimeTestSuite[CONTEXT](edition, runtime) {
 
   // We always get OperatorProfile.NO_DATA for page cache hits and misses in Pipelined
-  val NO_PROFILE = new OperatorProfile.ConstOperatorProfile(0, 0, 0, OperatorProfile.NO_DATA, OperatorProfile.NO_DATA, OperatorProfile.NO_DATA)
+  val NO_PROFILE = new OperatorProfile.ConstOperatorProfile(0, 0, 0, 0, 0, OperatorProfile.NO_DATA)
 
   // time is profiled in nano-seconds, but we can only assert > 0, because the operators take
   // different time on different tested systems.
@@ -601,6 +601,43 @@ trait NonParallelProfileTimeTestBase[CONTEXT <: RuntimeContext] {
     queryProfile.operatorProfile(0).time() should be > 0L // produce results
     queryProfile.operatorProfile(1).time() should be > 0L // partial sort
     queryProfile.operatorProfile(2).time() should be > 0L // input
+    // Should not attribute anything to the invalid id
+    queryProfile.operatorProfile(Id.INVALID_ID.x) should be(NO_PROFILE)
+  }
+
+  test("should profile time of triadic selection") {
+    // given
+    given { chainGraphs(sizeHint, "A", "B") }
+
+    // when
+    val logicalQuery = new LogicalQueryBuilder(this)
+      .produceResults("x", "y", "z")
+      .triadicSelection(positivePredicate = false, "x", "y", "z")
+      .|.expandAll("(y)-->(z)")
+      .|.argument("x", "y")
+      .expandAll("(x)-->(y)")
+      .allNodeScan("x")
+      .build()
+
+    val runtimeResult = profile(logicalQuery, runtime)
+    consume(runtimeResult)
+
+    // then
+    val queryProfile = runtimeResult.runtimeResult.queryProfile()
+    val time: Int => Long = queryProfile.operatorProfile(_).time()
+
+    time(0) should be > 0L // produce results
+    time(2) should be > 0L // expand
+    time(3) should be > 0L // argument
+    time(4) should be > 0L // expand
+    time(5) should be > 0L // all node scan
+
+    // in pipelined triadic selection is rewritten into build-apply-filter
+    (time(1), time(6), time(7), time(8)) should {
+      be >= ((1L, 0L, 0L, 0L)) or // triadic selection
+      be >= ((0L, 1L, 1L, 1L))    // triadic build, apply, triadic filter
+    }
+
     // Should not attribute anything to the invalid id
     queryProfile.operatorProfile(Id.INVALID_ID.x) should be(NO_PROFILE)
   }

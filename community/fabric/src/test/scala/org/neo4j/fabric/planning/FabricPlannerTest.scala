@@ -36,7 +36,7 @@ import org.neo4j.cypher.CypherVersion
 import org.neo4j.cypher.internal.FullyParsedQuery
 import org.neo4j.cypher.internal.QueryOptions
 import org.neo4j.cypher.internal.ast.AstConstructionTestSupport
-import org.neo4j.cypher.internal.ast.CreateIndexNewSyntax
+import org.neo4j.cypher.internal.ast.CreateIndex
 import org.neo4j.cypher.internal.ast.CreateRole
 import org.neo4j.cypher.internal.ast.CreateUser
 import org.neo4j.cypher.internal.ast.IfExistsThrowError
@@ -134,7 +134,7 @@ class FabricPlannerTest
 
       parse(remote.query)
         .shouldEqual(
-          CreateIndexNewSyntax(varFor("n"), labelName("Label"), List(prop("n", "prop")), Some("myIndex"), IfExistsThrowError)(pos)
+          CreateIndex(varFor("n"), labelName("Label"), List(prop("n", "prop")), Some("myIndex"), IfExistsThrowError, Map.empty)(pos)
         )
     }
 
@@ -328,6 +328,25 @@ class FabricPlannerTest
 
       actual.shouldEqual(expected)
 
+    }
+
+    "union query with overloaded var names and aggregation should not fail" in {
+      // This query crashed in Namespacer due to lost input positions
+      val inst = instance(
+        """
+          |RETURN 'a' AS val, [] AS thisBreaks
+          |UNION
+          |CALL {
+          |    WITH 'b' AS val RETURN val
+          |    UNION
+          |    WITH 'c' AS val RETURN val
+          |}
+          |WITH val, [v IN collect(val) WHERE v = 'd' | v] AS thisBreaks
+          |RETURN val, thisBreaks
+      """.stripMargin)
+
+      // Assert that getting the plan does not fail
+      val dummy = inst.plan
     }
 
   }

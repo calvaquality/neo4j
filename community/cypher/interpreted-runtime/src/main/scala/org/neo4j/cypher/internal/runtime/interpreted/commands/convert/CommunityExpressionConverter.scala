@@ -188,7 +188,9 @@ case class CommunityExpressionConverter(tokenContext: TokenContext) extends Expr
       case e: internal.expressions.CaseExpression => caseExpression(id, e, self)
       case e: internal.expressions.ShortestPathExpression => commands.expressions
         .ShortestPathExpression(e.pattern.asLegacyPatterns(id, None, self).head, operatorId = id)
+      case e: internal.expressions.HasLabelsOrTypes => hasLabelsOrTypes(id, e, self)
       case e: internal.expressions.HasLabels => hasLabels(id, e, self)
+      case e: internal.expressions.HasTypes => hasTypes(id, e, self)
       case e: internal.expressions.ListLiteral => commands.expressions.ListLiteral(toCommandExpression(id, e.expressions, self): _*)
       case e: internal.expressions.MapExpression => commands.expressions.LiteralMap(mapItems(id, e.items, self))
       case e: internal.expressions.ListSlice => commands.expressions
@@ -250,6 +252,21 @@ case class CommunityExpressionConverter(tokenContext: TokenContext) extends Expr
           id)
 
       case e: internal.expressions.GetDegree => getDegree(id, e, self)
+      case internal.expressions.HasDegreeGreaterThan(node, relType, dir, degree) =>
+        val typ = relType.map(relType => UnresolvedRelType(relType.name))
+        commands.expressions.HasDegreeGreaterThan(self.toCommandExpression(id, node), typ, dir, self.toCommandExpression(id, degree))
+      case internal.expressions.HasDegreeGreaterThanOrEqual(node, relType, dir, degree) =>
+        val typ = relType.map(relType => UnresolvedRelType(relType.name))
+        commands.expressions.HasDegreeGreaterThanOrEqual(self.toCommandExpression(id, node), typ, dir, self.toCommandExpression(id, degree))
+      case internal.expressions.HasDegree(node, relType, dir, degree) =>
+        val typ = relType.map(relType => UnresolvedRelType(relType.name))
+        commands.expressions.HasDegree(self.toCommandExpression(id, node), typ, dir, self.toCommandExpression(id, degree))
+      case internal.expressions.HasDegreeLessThan(node, relType, dir, degree) =>
+        val typ = relType.map(relType => UnresolvedRelType(relType.name))
+        commands.expressions.HasDegreeLessThan(self.toCommandExpression(id, node), typ, dir, self.toCommandExpression(id, degree))
+      case internal.expressions.HasDegreeLessThanOrEqual(node, relType, dir, degree) =>
+        val typ = relType.map(relType => UnresolvedRelType(relType.name))
+        commands.expressions.HasDegreeLessThanOrEqual(self.toCommandExpression(id, node), typ, dir, self.toCommandExpression(id, degree))
       case e: PrefixSeekRangeWrapper => commands.expressions
         .PrefixSeekRangeExpression(e.range.map(self.toCommandExpression(id,_)))
       case e: InequalitySeekRangeWrapper => InequalitySeekRangeExpression(e.range.mapBounds(self.toCommandExpression(id,_)))
@@ -538,16 +555,16 @@ case class CommunityExpressionConverter(tokenContext: TokenContext) extends Expr
 
   private def in(id: Id, e: internal.expressions.In, self: ExpressionConverters) = e.rhs match {
     case value: internal.expressions.Parameter =>
-      predicates.ConstantCachedIn(self.toCommandExpression(id, e.lhs), self.toCommandExpression(id, value))
+      predicates.ConstantCachedIn(self.toCommandExpression(id, e.lhs), self.toCommandExpression(id, value), id)
 
     case value@internal.expressions.ListLiteral(expressions) if expressions.isEmpty =>
       predicates.Not(predicates.True())
 
     case value@internal.expressions.ListLiteral(expressions) if expressions.forall(_.isInstanceOf[internal.expressions.Literal]) =>
-      predicates.ConstantCachedIn(self.toCommandExpression(id, e.lhs), self.toCommandExpression(id, value))
+      predicates.ConstantCachedIn(self.toCommandExpression(id, e.lhs), self.toCommandExpression(id, value), id)
 
     case _ =>
-      predicates.DynamicCachedIn(self.toCommandExpression(id, e.lhs), self.toCommandExpression(id, e.rhs))
+      predicates.DynamicCachedIn(self.toCommandExpression(id, e.lhs), self.toCommandExpression(id, e.rhs), id)
   }
 
   private def caseExpression(id: Id, e: internal.expressions.CaseExpression, self: ExpressionConverters) = e.expression match {
@@ -562,11 +579,28 @@ case class CommunityExpressionConverter(tokenContext: TokenContext) extends Expr
       commands.expressions.GenericCase(predicateAlternatives, toCommandExpression(id, e.default, self))
   }
 
+  private def hasLabelsOrTypes(id: Id, e: internal.expressions.HasLabelsOrTypes, self: ExpressionConverters): Predicate = {
+    val preds = e.labelsOrTypes.map {
+      l =>
+        predicates.HasLabelOrType(self.toCommandExpression(id, e.expression), l.name): Predicate
+    }
+    commands.predicates.Ands(preds: _*)
+  }
+
   private def hasLabels(id: Id, e: internal.expressions.HasLabels, self: ExpressionConverters): Predicate = {
     val preds = e.labels.map {
       l =>
         predicates.HasLabel(self.toCommandExpression(id, e.expression),
           commands.values.KeyToken.Unresolved(l.name, commands.values.TokenType.Label)): Predicate
+    }
+    commands.predicates.Ands(preds: _*)
+  }
+
+  private def hasTypes(id: Id, e: internal.expressions.HasTypes, self: ExpressionConverters): Predicate = {
+    val preds = e.types.map {
+      l =>
+        predicates.HasType(self.toCommandExpression(id, e.expression),
+          commands.values.KeyToken.Unresolved(l.name, commands.values.TokenType.RelType)): Predicate
     }
     commands.predicates.Ands(preds: _*)
   }

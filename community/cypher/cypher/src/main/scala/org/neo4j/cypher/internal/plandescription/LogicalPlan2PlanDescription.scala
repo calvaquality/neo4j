@@ -163,6 +163,8 @@ import org.neo4j.cypher.internal.logical.plans.Skip
 import org.neo4j.cypher.internal.logical.plans.Sort
 import org.neo4j.cypher.internal.logical.plans.SystemProcedureCall
 import org.neo4j.cypher.internal.logical.plans.Top
+import org.neo4j.cypher.internal.logical.plans.TriadicBuild
+import org.neo4j.cypher.internal.logical.plans.TriadicFilter
 import org.neo4j.cypher.internal.logical.plans.TriadicSelection
 import org.neo4j.cypher.internal.logical.plans.UndirectedRelationshipByIdSeek
 import org.neo4j.cypher.internal.logical.plans.Union
@@ -290,13 +292,13 @@ case class LogicalPlan2PlanDescription(readOnly: Boolean, cardinalities: Cardina
         PlanDescriptionImpl(id, "RelationshipCountFromCountStore", NoChildren, Seq(Details(info)), variables)
 
       case DoNothingIfExistsForIndex(labelName, propertyKeyNames, nameOption) =>
-        PlanDescriptionImpl(id, s"DoNothingIfExists(INDEX)", NoChildren, Seq(Details(indexSchemaInfo(nameOption, labelName, propertyKeyNames))), variables)
+        PlanDescriptionImpl(id, s"DoNothingIfExists(INDEX)", NoChildren, Seq(Details(indexInfo(nameOption, labelName, propertyKeyNames, Map.empty))), variables)
 
-      case CreateIndex(_, labelName, propertyKeyNames, nameOption) => // Can be both a leaf plan and a middle plan so need to be in both places
-        PlanDescriptionImpl(id, "CreateIndex", NoChildren, Seq(Details(indexSchemaInfo(nameOption, labelName, propertyKeyNames))), variables)
+      case CreateIndex(_, labelName, propertyKeyNames, nameOption, options) => // Can be both a leaf plan and a middle plan so need to be in both places
+        PlanDescriptionImpl(id, "CreateIndex", NoChildren, Seq(Details(indexInfo(nameOption, labelName, propertyKeyNames, options))), variables)
 
       case DropIndex(labelName, propertyKeyNames) =>
-        PlanDescriptionImpl(id, "DropIndex", NoChildren, Seq(Details(indexSchemaInfo(None, labelName, propertyKeyNames))), variables)
+        PlanDescriptionImpl(id, "DropIndex", NoChildren, Seq(Details(indexInfo(None, labelName, propertyKeyNames, Map.empty))), variables)
 
       case DropIndexOnName(name, _) =>
         PlanDescriptionImpl(id, "DropIndex", NoChildren, Seq(Details(pretty"INDEX ${asPrettyString(name)}")), variables)
@@ -309,12 +311,12 @@ case class LogicalPlan2PlanDescription(readOnly: Boolean, cardinalities: Cardina
         }
         PlanDescriptionImpl(id, s"DoNothingIfExists(CONSTRAINT)", NoChildren, Seq(Details(constraintInfo(name, entity, entityType, props, a))), variables)
 
-      case CreateUniquePropertyConstraint(_, node, label, properties: Seq[Property], nameOption) => // Can be both a leaf plan and a middle plan so need to be in both places
-        val details = Details(constraintInfo(nameOption, node, scala.util.Left(label), properties, scala.util.Right("IS UNIQUE")))
+      case CreateUniquePropertyConstraint(_, node, label, properties: Seq[Property], nameOption, options) => // Can be both a leaf plan and a middle plan so need to be in both places
+        val details = Details(constraintInfo(nameOption, node, scala.util.Left(label), properties, scala.util.Right("IS UNIQUE"), options))
         PlanDescriptionImpl(id, "CreateConstraint", NoChildren, Seq(details), variables)
 
-      case CreateNodeKeyConstraint(_, node, label, properties: Seq[Property], nameOption) => // Can be both a leaf plan and a middle plan so need to be in both places
-        val details = Details(constraintInfo(nameOption, node, scala.util.Left(label), properties, scala.util.Right("IS NODE KEY")))
+      case CreateNodeKeyConstraint(_, node, label, properties: Seq[Property], nameOption, options) => // Can be both a leaf plan and a middle plan so need to be in both places
+        val details = Details(constraintInfo(nameOption, node, scala.util.Left(label), properties, scala.util.Right("IS NODE KEY"), options))
         PlanDescriptionImpl(id, "CreateConstraint", NoChildren, Seq(details), variables)
 
       case CreateNodePropertyExistenceConstraint(_, label, prop, nameOption) => // Can be both a leaf plan and a middle plan so need to be in both places
@@ -599,15 +601,15 @@ case class LogicalPlan2PlanDescription(readOnly: Boolean, cardinalities: Cardina
         }
         PlanDescriptionImpl(id, s"VarLengthExpand($modeDescr)", children, Seq(Details(pretty"$expandDescription$predicatesDescription")), variables)
 
-      case CreateIndex(_, labelName, propertyKeyNames, nameOption) => // Can be both a leaf plan and a middle plan so need to be in both places
-        PlanDescriptionImpl(id, "CreateIndex", children, Seq(Details(indexSchemaInfo(nameOption, labelName, propertyKeyNames))), variables)
+      case CreateIndex(_, labelName, propertyKeyNames, nameOption, options) => // Can be both a leaf plan and a middle plan so need to be in both places
+        PlanDescriptionImpl(id, "CreateIndex", children, Seq(Details(indexInfo(nameOption, labelName, propertyKeyNames, options))), variables)
 
-      case CreateUniquePropertyConstraint(_, node, label, properties: Seq[Property], nameOption) => // Can be both a leaf plan and a middle plan so need to be in both places
-        val details = Details(constraintInfo(nameOption, node, scala.util.Left(label), properties, scala.util.Right("IS UNIQUE")))
+      case CreateUniquePropertyConstraint(_, node, label, properties: Seq[Property], nameOption, options) => // Can be both a leaf plan and a middle plan so need to be in both places
+        val details = Details(constraintInfo(nameOption, node, scala.util.Left(label), properties, scala.util.Right("IS UNIQUE"), options))
         PlanDescriptionImpl(id, "CreateConstraint", children, Seq(details), variables)
 
-      case CreateNodeKeyConstraint(_, node, label, properties: Seq[Property], nameOption) => // Can be both a leaf plan and a middle plan so need to be in both places
-        val details = Details(constraintInfo(nameOption, node, scala.util.Left(label), properties, scala.util.Right("IS NODE KEY")))
+      case CreateNodeKeyConstraint(_, node, label, properties: Seq[Property], nameOption, options) => // Can be both a leaf plan and a middle plan so need to be in both places
+        val details = Details(constraintInfo(nameOption, node, scala.util.Left(label), properties, scala.util.Right("IS NODE KEY"), options))
         PlanDescriptionImpl(id, "CreateConstraint", children, Seq(details), variables)
 
       case CreateNodePropertyExistenceConstraint(_, label, prop, nameOption) => // Can be both a leaf plan and a middle plan so need to be in both places
@@ -619,6 +621,15 @@ case class LogicalPlan2PlanDescription(readOnly: Boolean, cardinalities: Cardina
         val relationship = prop.map.asCanonicalStringVal
         val details = Details(constraintInfo(nameOption, relationship, scala.util.Right(relTypeName), Seq(prop), scala.util.Left("exists")))
         PlanDescriptionImpl(id, "CreateConstraint", children, Seq(details), variables)
+
+      case TriadicBuild(_, sourceId, seenId, _) =>
+        val details = Details(pretty"(${asPrettyString(sourceId)})--(${asPrettyString(seenId)})")
+        PlanDescriptionImpl(id, "TriadicBuild", children, Seq(details), variables)
+
+      case TriadicFilter(_, positivePredicate, sourceId, targetId, _) =>
+        val positivePredicateString = if (positivePredicate) pretty"" else pretty"NOT "
+        val details = Details(pretty"WHERE $positivePredicateString(${asPrettyString(sourceId)})--(${asPrettyString(targetId)})")
+        PlanDescriptionImpl(id, "TriadicFilter", children, Seq(details), variables)
 
       case x => throw new InternalException(s"Unknown plan type: ${x.getClass.getSimpleName}. Missing a case?")
     }
@@ -985,17 +996,22 @@ case class LogicalPlan2PlanDescription(readOnly: Boolean, cardinalities: Cardina
     if (caches.isEmpty) pretty"" else caches.map(asPrettyString(_)).mkPrettyString(", ", ", ", "")
   }
 
-  private def indexSchemaInfo(nameOption: Option[String], label: LabelName, properties: Seq[PropertyKeyName]): PrettyString = {
+  private def indexInfo(nameOption: Option[String], label: LabelName, properties: Seq[PropertyKeyName], options: Map[String, Expression]): PrettyString = {
     val name = nameOption match {
       case Some(n) => pretty" ${asPrettyString(n)}"
       case _ => pretty""
     }
     val propertyString = properties.map(asPrettyString(_)).mkPrettyString("(", SEPARATOR, ")")
     val prettyLabel = asPrettyString(label.name)
-    pretty"INDEX$name FOR (:$prettyLabel) ON $propertyString"
+    pretty"INDEX$name FOR (:$prettyLabel) ON $propertyString${prettyOptions(options)}"
   }
 
-  private def constraintInfo(nameOption: Option[String], entity: String, entityType: Either[LabelName, RelTypeName], properties: Seq[Property], assertion: Either[String, String]): PrettyString = {
+  private def constraintInfo(nameOption: Option[String],
+                             entity: String,
+                             entityType: Either[LabelName, RelTypeName],
+                             properties: Seq[Property],
+                             assertion: Either[String, String],
+                             options: Map[String, Expression] = Map.empty): PrettyString = {
     val name = nameOption.map(n => pretty" ${asPrettyString(n)}").getOrElse(pretty"")
     val (leftAssertion, rightAssertion) = assertion match {
       case scala.util.Left(a) => (asPrettyString.raw(a), pretty"")
@@ -1008,8 +1024,11 @@ case class LogicalPlan2PlanDescription(readOnly: Boolean, cardinalities: Cardina
       case scala.util.Left(label) => pretty"($prettyEntity:${asPrettyString(label)})"
       case scala.util.Right(relType) => pretty"()-[$prettyEntity:${asPrettyString(relType)}]-()"
     }
-    pretty"CONSTRAINT$name ON $entityInfo ASSERT $leftAssertion$propertyString$rightAssertion"
+    pretty"CONSTRAINT$name ON $entityInfo ASSERT $leftAssertion$propertyString$rightAssertion${prettyOptions(options)}"
   }
+
+  private def prettyOptions(options: Map[String, Expression]): PrettyString =
+    if (options.nonEmpty) pretty" OPTIONS ${options.map({ case (s, e) => pretty"${asPrettyString(s)}: ${asPrettyString(e)}" }).mkPrettyString("{", SEPARATOR, "}")}" else pretty""
 
   private def setPropertyInfo(idName: PrettyString,
                               expression: Expression,

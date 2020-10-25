@@ -55,7 +55,7 @@ import org.neo4j.cypher.internal.ast.CreateDatabaseAction
 import org.neo4j.cypher.internal.ast.CreateElementAction
 import org.neo4j.cypher.internal.ast.CreateIndex
 import org.neo4j.cypher.internal.ast.CreateIndexAction
-import org.neo4j.cypher.internal.ast.CreateIndexNewSyntax
+import org.neo4j.cypher.internal.ast.CreateIndexOldSyntax
 import org.neo4j.cypher.internal.ast.CreateNodeKeyConstraint
 import org.neo4j.cypher.internal.ast.CreateNodeLabelAction
 import org.neo4j.cypher.internal.ast.CreateNodePropertyExistenceConstraint
@@ -96,10 +96,13 @@ import org.neo4j.cypher.internal.ast.DumpData
 import org.neo4j.cypher.internal.ast.ElementQualifier
 import org.neo4j.cypher.internal.ast.ElementsAllQualifier
 import org.neo4j.cypher.internal.ast.ExecuteAdminProcedureAction
+import org.neo4j.cypher.internal.ast.ExecuteBoostedFunctionAction
 import org.neo4j.cypher.internal.ast.ExecuteBoostedProcedureAction
+import org.neo4j.cypher.internal.ast.ExecuteFunctionAction
 import org.neo4j.cypher.internal.ast.ExecuteProcedureAction
 import org.neo4j.cypher.internal.ast.Foreach
 import org.neo4j.cypher.internal.ast.FromGraph
+import org.neo4j.cypher.internal.ast.FunctionQualifier
 import org.neo4j.cypher.internal.ast.GrantPrivilege
 import org.neo4j.cypher.internal.ast.GrantRolesToUsers
 import org.neo4j.cypher.internal.ast.GraphAction
@@ -109,6 +112,7 @@ import org.neo4j.cypher.internal.ast.IfExistsDoNothing
 import org.neo4j.cypher.internal.ast.IfExistsInvalidSyntax
 import org.neo4j.cypher.internal.ast.IfExistsReplace
 import org.neo4j.cypher.internal.ast.IfExistsThrowError
+import org.neo4j.cypher.internal.ast.IndefiniteWait
 import org.neo4j.cypher.internal.ast.LabelAllQualifier
 import org.neo4j.cypher.internal.ast.LabelQualifier
 import org.neo4j.cypher.internal.ast.LabelsResource
@@ -121,6 +125,7 @@ import org.neo4j.cypher.internal.ast.MergeAction
 import org.neo4j.cypher.internal.ast.MergeAdminAction
 import org.neo4j.cypher.internal.ast.NamedDatabaseScope
 import org.neo4j.cypher.internal.ast.NamedGraphScope
+import org.neo4j.cypher.internal.ast.NoWait
 import org.neo4j.cypher.internal.ast.NodeByIds
 import org.neo4j.cypher.internal.ast.NodeByParameter
 import org.neo4j.cypher.internal.ast.OnCreate
@@ -128,6 +133,7 @@ import org.neo4j.cypher.internal.ast.OnMatch
 import org.neo4j.cypher.internal.ast.OrderBy
 import org.neo4j.cypher.internal.ast.PeriodicCommitHint
 import org.neo4j.cypher.internal.ast.PrivilegeCommand
+import org.neo4j.cypher.internal.ast.PrivilegeQualifier
 import org.neo4j.cypher.internal.ast.ProcedureQualifier
 import org.neo4j.cypher.internal.ast.ProcedureResult
 import org.neo4j.cypher.internal.ast.ProcedureResultItem
@@ -170,8 +176,10 @@ import org.neo4j.cypher.internal.ast.SetPropertyAction
 import org.neo4j.cypher.internal.ast.SetPropertyItem
 import org.neo4j.cypher.internal.ast.SetUserStatusAction
 import org.neo4j.cypher.internal.ast.ShowAllPrivileges
+import org.neo4j.cypher.internal.ast.ShowCurrentUser
 import org.neo4j.cypher.internal.ast.ShowDatabase
 import org.neo4j.cypher.internal.ast.ShowPrivilegeAction
+import org.neo4j.cypher.internal.ast.ShowPrivilegeCommands
 import org.neo4j.cypher.internal.ast.ShowPrivileges
 import org.neo4j.cypher.internal.ast.ShowRoleAction
 import org.neo4j.cypher.internal.ast.ShowRoles
@@ -193,6 +201,7 @@ import org.neo4j.cypher.internal.ast.StopDatabase
 import org.neo4j.cypher.internal.ast.StopDatabaseAction
 import org.neo4j.cypher.internal.ast.SubQuery
 import org.neo4j.cypher.internal.ast.TerminateTransactionAction
+import org.neo4j.cypher.internal.ast.TimeoutAfter
 import org.neo4j.cypher.internal.ast.TransactionManagementAction
 import org.neo4j.cypher.internal.ast.TraverseAction
 import org.neo4j.cypher.internal.ast.UnaliasedReturnItem
@@ -208,11 +217,11 @@ import org.neo4j.cypher.internal.ast.UsingHint
 import org.neo4j.cypher.internal.ast.UsingIndexHint
 import org.neo4j.cypher.internal.ast.UsingJoinHint
 import org.neo4j.cypher.internal.ast.UsingScanHint
+import org.neo4j.cypher.internal.ast.WaitUntilComplete
 import org.neo4j.cypher.internal.ast.Where
 import org.neo4j.cypher.internal.ast.With
 import org.neo4j.cypher.internal.ast.WriteAction
 import org.neo4j.cypher.internal.ast.Yield
-import org.neo4j.cypher.internal.ast.YieldOrWhere
 import org.neo4j.cypher.internal.ast.generator.AstGenerator.boolean
 import org.neo4j.cypher.internal.ast.generator.AstGenerator.char
 import org.neo4j.cypher.internal.ast.generator.AstGenerator.oneOrMore
@@ -246,13 +255,14 @@ import org.neo4j.cypher.internal.expressions.FunctionInvocation
 import org.neo4j.cypher.internal.expressions.FunctionName
 import org.neo4j.cypher.internal.expressions.GreaterThan
 import org.neo4j.cypher.internal.expressions.GreaterThanOrEqual
-import org.neo4j.cypher.internal.expressions.HasLabels
+import org.neo4j.cypher.internal.expressions.HasLabelsOrTypes
 import org.neo4j.cypher.internal.expressions.In
 import org.neo4j.cypher.internal.expressions.InvalidNotEquals
 import org.neo4j.cypher.internal.expressions.IsNotNull
 import org.neo4j.cypher.internal.expressions.IsNull
 import org.neo4j.cypher.internal.expressions.IterablePredicateExpression
 import org.neo4j.cypher.internal.expressions.LabelName
+import org.neo4j.cypher.internal.expressions.LabelOrRelTypeName
 import org.neo4j.cypher.internal.expressions.LessThan
 import org.neo4j.cypher.internal.expressions.LessThanOrEqual
 import org.neo4j.cypher.internal.expressions.ListComprehension
@@ -414,6 +424,9 @@ class AstGenerator(simpleStrings: Boolean = true, allowedVarNames: Option[Seq[St
   def _relTypeName: Gen[RelTypeName] =
     _identifier.map(RelTypeName(_)(pos))
 
+  def _labelOrTypeName: Gen[LabelOrRelTypeName] =
+    _identifier.map(LabelOrRelTypeName(_)(pos))
+
   def _propertyKeyName: Gen[PropertyKeyName] =
     _identifier.map(PropertyKeyName(_)(pos))
 
@@ -546,10 +559,10 @@ class AstGenerator(simpleStrings: Boolean = true, allowedVarNames: Option[Seq[St
     )
   } yield res
 
-  def _hasLabels: Gen[HasLabels] = for {
+  def _hasLabelsOrTypes: Gen[HasLabelsOrTypes] = for {
     expression <- _expression
-    labels <- oneOrMore(_labelName)
-  } yield HasLabels(expression, labels)(pos)
+    labels <- oneOrMore(_labelOrTypeName)
+  } yield HasLabelsOrTypes(expression, labels)(pos)
 
   // Collections
   // ----------------------------------
@@ -557,6 +570,10 @@ class AstGenerator(simpleStrings: Boolean = true, allowedVarNames: Option[Seq[St
   def _map: Gen[MapExpression] = for {
     items <- zeroOrMore(tuple(_propertyKeyName, _expression))
   } yield MapExpression(items)(pos)
+
+  def _mapStringKeys: Gen[Map[String, Expression]] = for {
+    items <- zeroOrMore(tuple(_identifier, _expression))
+  } yield items.toMap
 
   def _property: Gen[Property] = for {
     map <- _expression
@@ -741,7 +758,7 @@ class AstGenerator(simpleStrings: Boolean = true, allowedVarNames: Option[Seq[St
         lzy(_predicateBinary),
         lzy(_predicateComparisonChain),
         lzy(_iterablePredicate),
-        lzy(_hasLabels),
+        lzy(_hasLabelsOrTypes),
         lzy(_arithmeticUnary),
         lzy(_arithmeticBinary),
         lzy(_case),
@@ -1139,14 +1156,15 @@ class AstGenerator(simpleStrings: Boolean = true, allowedVarNames: Option[Seq[St
     props <- oneOrMore(_variableProperty)
   } yield props
 
-  def _createIndex: Gen[CreateIndexNewSyntax] = for {
+  def _createIndex: Gen[CreateIndex] = for {
     variable   <- _variable
     labelName  <- _labelName
     props      <- _listOfProperties
     name       <- option(_identifier)
     ifExistsDo <- _ifExistsDo
+    options    <- _mapStringKeys
     use        <- option(_use)
-  } yield CreateIndexNewSyntax(variable, labelName, props, name, ifExistsDo, use)(pos)
+  } yield CreateIndex(variable, labelName, props, name, ifExistsDo, options, use)(pos)
 
   def _dropIndex: Gen[DropIndexOnName] = for {
     name     <- _identifier
@@ -1158,7 +1176,7 @@ class AstGenerator(simpleStrings: Boolean = true, allowedVarNames: Option[Seq[St
     labelName <- _labelName
     props     <- oneOrMore(_propertyKeyName)
     use       <- option(_use)
-    command   <- oneOf(CreateIndex(labelName, props, use)(pos), DropIndex(labelName, props, use)(pos))
+    command   <- oneOf(CreateIndexOldSyntax(labelName, props, use)(pos), DropIndex(labelName, props, use)(pos))
   } yield command
 
   def _createConstraint: Gen[SchemaCommand] = for {
@@ -1169,10 +1187,11 @@ class AstGenerator(simpleStrings: Boolean = true, allowedVarNames: Option[Seq[St
     prop                <- _variableProperty
     name                <- option(_identifier)
     ifExistsDo          <- _ifExistsDo
+    options             <- _mapStringKeys
     use                 <- option(_use)
-    nodeKey             = CreateNodeKeyConstraint(variable, labelName, props, name, ifExistsDo, use)(pos)
-    uniqueness          = CreateUniquePropertyConstraint(variable, labelName, Seq(prop), name, ifExistsDo, use)(pos)
-    compositeUniqueness = CreateUniquePropertyConstraint(variable, labelName, props, name, ifExistsDo, use)(pos)
+    nodeKey             = CreateNodeKeyConstraint(variable, labelName, props, name, ifExistsDo, options, use)(pos)
+    uniqueness          = CreateUniquePropertyConstraint(variable, labelName, Seq(prop), name, ifExistsDo, options, use)(pos)
+    compositeUniqueness = CreateUniquePropertyConstraint(variable, labelName, props, name, ifExistsDo, options, use)(pos)
     nodeExistence       = CreateNodePropertyExistenceConstraint(variable, labelName, prop, name, ifExistsDo, use)(pos)
     relExistence        = CreateRelationshipPropertyExistenceConstraint(variable, relTypeName, prop, name, ifExistsDo, use)(pos)
     command             <- oneOf(nodeKey, uniqueness, compositeUniqueness, nodeExistence, relExistence)
@@ -1228,6 +1247,10 @@ class AstGenerator(simpleStrings: Boolean = true, allowedVarNames: Option[Seq[St
     yields <- option(_eitherYieldOrWhere)
   } yield ShowUsers(yields)(pos)
 
+  def _showCurrentUser: Gen[ShowCurrentUser] = for {
+    yields <- option(_eitherYieldOrWhere)
+  } yield ShowCurrentUser(yields)(pos)
+
   def _eitherYieldOrWhere: Gen[Either[(ast.Yield, Option[ast.Return]), ast.Where]] = for {
     yields <- _yield
     where <- _where
@@ -1264,6 +1287,7 @@ class AstGenerator(simpleStrings: Boolean = true, allowedVarNames: Option[Seq[St
 
   def _userCommand: Gen[AdministrationCommand] = oneOf(
     _showUsers,
+    _showCurrentUser,
     _createUser,
     _dropUser,
     _alterUser,
@@ -1311,8 +1335,14 @@ class AstGenerator(simpleStrings: Boolean = true, allowedVarNames: Option[Seq[St
 
   def _revokeType: Gen[RevokeType] = oneOf(RevokeGrantType()(pos), RevokeDenyType()(pos), RevokeBothType()(pos))
 
-  def _graphAction: Gen[GraphAction] = oneOf(
-    TraverseAction, ReadAction, MatchAction, MergeAdminAction, CreateElementAction, DeleteElementAction, WriteAction, RemoveLabelAction, SetLabelAction, SetPropertyAction, AllGraphAction
+  def _dbmsAction: Gen[DbmsAction] = oneOf(
+    AllDbmsAction,
+    ExecuteProcedureAction, ExecuteBoostedProcedureAction, ExecuteAdminProcedureAction,
+    ExecuteFunctionAction, ExecuteBoostedFunctionAction,
+    AllUserActions, ShowUserAction, CreateUserAction, SetUserStatusAction, SetPasswordsAction, AlterUserAction, DropUserAction,
+    AllRoleActions, ShowRoleAction, CreateRoleAction, DropRoleAction, AssignRoleAction, RemoveRoleAction,
+    AllDatabaseManagementActions, CreateDatabaseAction, DropDatabaseAction,
+    AllPrivilegeActions, ShowPrivilegeAction, AssignPrivilegeAction, RemovePrivilegeAction
   )
 
   def _databaseAction: Gen[DatabaseAction] = oneOf(
@@ -1324,13 +1354,31 @@ class AstGenerator(simpleStrings: Boolean = true, allowedVarNames: Option[Seq[St
     AllTransactionActions, ShowTransactionAction, TerminateTransactionAction
   )
 
-  def _dbmsAction: Gen[DbmsAction] = oneOf(
-    AllDbmsAction, ExecuteAdminProcedureAction,
-    AllUserActions, ShowUserAction, CreateUserAction, SetUserStatusAction, SetPasswordsAction, AlterUserAction, DropUserAction,
-    AllRoleActions, ShowRoleAction, CreateRoleAction, DropRoleAction, AssignRoleAction, RemoveRoleAction,
-    AllDatabaseManagementActions, CreateDatabaseAction, DropDatabaseAction,
-    AllPrivilegeActions, ShowPrivilegeAction, AssignPrivilegeAction, RemovePrivilegeAction
+  def _graphAction: Gen[GraphAction] = oneOf(
+    TraverseAction, ReadAction, MatchAction, MergeAdminAction, CreateElementAction, DeleteElementAction, WriteAction, RemoveLabelAction, SetLabelAction, SetPropertyAction, AllGraphAction
   )
+
+  def _dbmsQualifier(dbmsAction: DbmsAction): Gen[List[PrivilegeQualifier]] =
+    if (dbmsAction == ExecuteProcedureAction || dbmsAction == ExecuteBoostedProcedureAction) {
+      // Procedures
+      for {
+        procedureNamespace <- _namespace
+        procedureName <- _procedureName
+        procedures <- oneOrMore(ProcedureQualifier(procedureNamespace, procedureName)(pos))
+        qualifier <- frequency(7 -> procedures, 3 -> List(ProcedureQualifier(Namespace()(pos), ProcedureName("*")(pos))(pos)))
+      } yield qualifier
+    } else if (dbmsAction == ExecuteFunctionAction || dbmsAction == ExecuteBoostedFunctionAction) {
+      // Functions
+      for {
+        functionNamespace <- _namespace
+        functionName <- _functionName
+        functions <- oneOrMore(FunctionQualifier(functionNamespace, functionName)(pos))
+        qualifier <- frequency(7 -> functions, 3 -> List(FunctionQualifier(Namespace()(pos), FunctionName("*")(pos))(pos)))
+      } yield qualifier
+    } else {
+      // All other dbms privileges have AllQualifier
+      List(AllQualifier()(pos))
+    }
 
   def _databaseQualifier(haveUserQualifier: Boolean): Gen[List[DatabasePrivilegeQualifier]] =
     if (haveUserQualifier) {
@@ -1386,28 +1434,26 @@ class AstGenerator(simpleStrings: Boolean = true, allowedVarNames: Option[Seq[St
     yields     <- option(_eitherYieldOrWhere)
   } yield ShowPrivileges(scope, yields)(pos)
 
+  def _showPrivilegeCommands: Gen[ShowPrivilegeCommands] = for {
+    names      <- _listOfNameOfEither
+    showRole   = ShowRolesPrivileges(names)(pos)
+    showUser1  = ShowUsersPrivileges(names)(pos)
+    showUser2  = ShowUserPrivileges(None)(pos)
+    showAll    = ShowAllPrivileges()(pos)
+    scope      <- oneOf(showRole, showUser1, showUser2, showAll)
+    asRevoke   <- boolean
+    yields     <- option(_eitherYieldOrWhere)
+  } yield ShowPrivilegeCommands(scope, asRevoke, yields)(pos)
+
   def _dbmsPrivilege: Gen[PrivilegeCommand] = for {
     dbmsAction      <- _dbmsAction
+    qualifier       <- _dbmsQualifier(dbmsAction)
     roleNames       <- _listOfNameOfEither
     revokeType      <- _revokeType
-    dbmsGrant       = GrantPrivilege.dbmsAction(dbmsAction, roleNames)(pos)
-    dbmsDeny        = DenyPrivilege.dbmsAction(dbmsAction, roleNames)(pos)
-    dbmsRevoke      = RevokePrivilege.dbmsAction(dbmsAction, roleNames, revokeType)(pos)
+    dbmsGrant       = GrantPrivilege.dbmsAction(dbmsAction, roleNames, qualifier)(pos)
+    dbmsDeny        = DenyPrivilege.dbmsAction(dbmsAction, roleNames, qualifier)(pos)
+    dbmsRevoke      = RevokePrivilege.dbmsAction(dbmsAction, roleNames, revokeType, qualifier)(pos)
     dbms            <- oneOf(dbmsGrant, dbmsDeny, dbmsRevoke)
-  } yield dbms
-
-  def _qualifiedDbmsPrivilege: Gen[PrivilegeCommand] = for {
-    dbmsAction         <- oneOf(ExecuteProcedureAction, ExecuteBoostedProcedureAction)
-    procedureNamespace <- _namespace
-    procedureName      <- _procedureName
-    procedures         <- oneOrMore(ProcedureQualifier(procedureNamespace, procedureName)(pos))
-    qualifier          <- frequency(7 -> procedures, 3 -> List(ProcedureQualifier(Namespace()(pos), ProcedureName("*")(pos))(pos)))
-    roleNames          <- _listOfNameOfEither
-    revokeType         <- _revokeType
-    dbmsGrant          = GrantPrivilege.dbmsAction(dbmsAction, roleNames, qualifier)(pos)
-    dbmsDeny           = DenyPrivilege.dbmsAction(dbmsAction, roleNames, qualifier)(pos)
-    dbmsRevoke         = RevokePrivilege.dbmsAction(dbmsAction, roleNames, revokeType, qualifier)(pos)
-    dbms               <- oneOf(dbmsGrant, dbmsDeny, dbmsRevoke)
   } yield dbms
 
   def _databasePrivilege: Gen[PrivilegeCommand] = for {
@@ -1438,8 +1484,8 @@ class AstGenerator(simpleStrings: Boolean = true, allowedVarNames: Option[Seq[St
 
   def _privilegeCommand: Gen[AdministrationCommand] = oneOf(
     _showPrivileges,
+    _showPrivilegeCommands,
     _dbmsPrivilege,
-    _qualifiedDbmsPrivilege,
     _databasePrivilege,
     _graphPrivilege
   )
@@ -1455,21 +1501,25 @@ class AstGenerator(simpleStrings: Boolean = true, allowedVarNames: Option[Seq[St
   def _createDatabase: Gen[CreateDatabase] = for {
     dbName <- _nameAsEither
     ifExistsDo <- _ifExistsDo
-  } yield CreateDatabase(dbName, ifExistsDo)(pos)
+    wait <- _waitUntilComplete
+  } yield CreateDatabase(dbName, ifExistsDo, wait)(pos)
 
   def _dropDatabase: Gen[DropDatabase] = for {
     dbName <- _nameAsEither
     ifExists <- boolean
     additionalAction <- Gen.oneOf( DumpData, DestroyData )
-  } yield DropDatabase(dbName, ifExists, additionalAction)(pos)
+    wait <- _waitUntilComplete
+  } yield DropDatabase(dbName, ifExists, additionalAction, wait)(pos)
 
   def _startDatabase: Gen[StartDatabase] = for {
     dbName <- _nameAsEither
-  } yield StartDatabase(dbName)(pos)
+    wait <- _waitUntilComplete
+  } yield StartDatabase(dbName, wait)(pos)
 
   def _stopDatabase: Gen[StopDatabase] = for {
     dbName <- _nameAsEither
-  } yield StopDatabase(dbName)(pos)
+    wait <- _waitUntilComplete
+  } yield StopDatabase(dbName, wait)(pos)
 
   def _multiDatabaseCommand: Gen[AdministrationCommand] = oneOf(
     _showDatabase,
@@ -1478,6 +1528,11 @@ class AstGenerator(simpleStrings: Boolean = true, allowedVarNames: Option[Seq[St
     _startDatabase,
     _stopDatabase
   )
+
+  def _waitUntilComplete: Gen[WaitUntilComplete] = for {
+    timeout <- posNum[Long]
+    wait <- oneOf(NoWait, IndefiniteWait, TimeoutAfter(timeout))
+  } yield wait
 
   // Top level administration command
 

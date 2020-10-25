@@ -31,6 +31,7 @@ import org.neo4j.cypher.internal.ast.ElementsAllQualifier
 import org.neo4j.cypher.internal.ast.ExecuteAdminProcedureAction
 import org.neo4j.cypher.internal.ast.ExecuteBoostedProcedureAction
 import org.neo4j.cypher.internal.ast.ExecuteProcedureAction
+import org.neo4j.cypher.internal.ast.IndefiniteWait
 import org.neo4j.cypher.internal.ast.LabelQualifier
 import org.neo4j.cypher.internal.ast.NoResource
 import org.neo4j.cypher.internal.ast.ProcedureAllQualifier
@@ -39,6 +40,7 @@ import org.neo4j.cypher.internal.ast.ProcedureResultItem
 import org.neo4j.cypher.internal.ast.ReadAction
 import org.neo4j.cypher.internal.ast.ShowUserAction
 import org.neo4j.cypher.internal.ast.ShowUsersPrivileges
+import org.neo4j.cypher.internal.ast.StartDatabaseAction
 import org.neo4j.cypher.internal.ast.StopDatabaseAction
 import org.neo4j.cypher.internal.ast.TraverseAction
 import org.neo4j.cypher.internal.ast.UserAllQualifier
@@ -229,7 +231,9 @@ import org.neo4j.cypher.internal.logical.plans.SetPropertiesFromMap
 import org.neo4j.cypher.internal.logical.plans.SetProperty
 import org.neo4j.cypher.internal.logical.plans.SetRelationshipPropertiesFromMap
 import org.neo4j.cypher.internal.logical.plans.SetRelationshipProperty
+import org.neo4j.cypher.internal.logical.plans.ShowCurrentUser
 import org.neo4j.cypher.internal.logical.plans.ShowDatabase
+import org.neo4j.cypher.internal.logical.plans.ShowPrivilegeCommands
 import org.neo4j.cypher.internal.logical.plans.ShowPrivileges
 import org.neo4j.cypher.internal.logical.plans.ShowRoles
 import org.neo4j.cypher.internal.logical.plans.ShowUsers
@@ -239,6 +243,8 @@ import org.neo4j.cypher.internal.logical.plans.Sort
 import org.neo4j.cypher.internal.logical.plans.StartDatabase
 import org.neo4j.cypher.internal.logical.plans.StopDatabase
 import org.neo4j.cypher.internal.logical.plans.Top
+import org.neo4j.cypher.internal.logical.plans.TriadicBuild
+import org.neo4j.cypher.internal.logical.plans.TriadicFilter
 import org.neo4j.cypher.internal.logical.plans.TriadicSelection
 import org.neo4j.cypher.internal.logical.plans.UndirectedRelationshipByIdSeek
 import org.neo4j.cypher.internal.logical.plans.Union
@@ -248,6 +254,7 @@ import org.neo4j.cypher.internal.logical.plans.UserFunctionSignature
 import org.neo4j.cypher.internal.logical.plans.ValueHashJoin
 import org.neo4j.cypher.internal.logical.plans.VarExpand
 import org.neo4j.cypher.internal.logical.plans.VariablePredicate
+import org.neo4j.cypher.internal.logical.plans.WaitForCompletion
 import org.neo4j.cypher.internal.plandescription.Arguments.Details
 import org.neo4j.cypher.internal.plandescription.Arguments.EstimatedRows
 import org.neo4j.cypher.internal.plandescription.Arguments.Order
@@ -258,6 +265,7 @@ import org.neo4j.cypher.internal.plandescription.Arguments.RuntimeVersion
 import org.neo4j.cypher.internal.plandescription.Arguments.Version
 import org.neo4j.cypher.internal.plandescription.LogicalPlan2PlanDescriptionTest.anonVar
 import org.neo4j.cypher.internal.plandescription.LogicalPlan2PlanDescriptionTest.details
+import org.neo4j.cypher.internal.plandescription.LogicalPlan2PlanDescriptionTest.planDescription
 import org.neo4j.cypher.internal.plandescription.LogicalPlan2PlanDescriptionTest.planDescription
 import org.neo4j.cypher.internal.plandescription.asPrettyString.PrettyStringInterpolator
 import org.neo4j.cypher.internal.planner.spi.IDPPlannerName
@@ -458,7 +466,7 @@ class LogicalPlan2PlanDescriptionTest extends CypherFunSuite with TableDrivenPro
     // This is ManyQueryExpression with only a single expression. That is possible to get, but the test utility IndexSeek cannot create those.
     assertGood(
       attach(NodeUniqueIndexSeek("x", LabelToken("Label", LabelId(0)), Seq(IndexedProperty(PropertyKeyToken("Prop", PropertyKeyId(0)), DoNotGetValue)),
-        ManyQueryExpression(ListLiteral(Seq(StringLiteral("Andres")(pos)))(pos)), Set.empty, IndexOrderNone), 95.0),
+        ManyQueryExpression(ListLiteral(Seq(stringLiteral("Andres")))(pos)), Set.empty, IndexOrderNone), 95.0),
       planDescription(id, "NodeUniqueIndexSeek", NoChildren, Seq(details("UNIQUE x:Label(Prop) WHERE Prop = \"Andres\"")), Set("x")))
 
     assertGood(
@@ -467,7 +475,7 @@ class LogicalPlan2PlanDescriptionTest extends CypherFunSuite with TableDrivenPro
           FunctionInvocation(MapExpression(Seq(
             (key("x"), number("1")),
             (key("y"), number("2")),
-            (key("crs"), StringLiteral("cartesian")(pos))
+            (key("crs"), stringLiteral("cartesian"))
           ))(pos), FunctionName(Point.name)(pos)), number("10"), inclusive = true
         ))(pos)),
         Set.empty, IndexOrderNone),
@@ -520,11 +528,11 @@ class LogicalPlan2PlanDescriptionTest extends CypherFunSuite with TableDrivenPro
 
   test("LoadCSV") {
     assertGood(
-      attach(LoadCSV(lhsLP, StringLiteral("file:///tmp/foo.csv")(pos), "u", NoHeaders, None, legacyCsvQuoteEscaping = false, csvBufferSize = 2), 27.6),
+      attach(LoadCSV(lhsLP, stringLiteral("file:///tmp/foo.csv"), "u", NoHeaders, None, legacyCsvQuoteEscaping = false, csvBufferSize = 2), 27.6),
       planDescription(id, "LoadCSV", SingleChild(lhsPD), Seq(details("u")), Set("u", "a")))
 
     assertGood(
-      attach(LoadCSV(lhsLP, StringLiteral("file:///tmp/foo.csv")(pos), "  UNNAMED2", NoHeaders, None, legacyCsvQuoteEscaping = false, csvBufferSize = 2), 27.6),
+      attach(LoadCSV(lhsLP, stringLiteral("file:///tmp/foo.csv"), "  UNNAMED2", NoHeaders, None, legacyCsvQuoteEscaping = false, csvBufferSize = 2), 27.6),
       planDescription(id, "LoadCSV", SingleChild(lhsPD), Seq(details(anonVar("2"))), Set(anonVar("2"), "a")))
   }
 
@@ -573,14 +581,17 @@ class LogicalPlan2PlanDescriptionTest extends CypherFunSuite with TableDrivenPro
   }
 
   test("CreateIndex") {
-    assertGood(attach(CreateIndex(None, label("Label"), List(key("prop")), Some("$indexName")), 63.2),
+    assertGood(attach(CreateIndex(None, label("Label"), List(key("prop")), Some("$indexName"), Map.empty), 63.2),
       planDescription(id, "CreateIndex", NoChildren, Seq(details("INDEX `$indexName` FOR (:Label) ON (prop)")), Set.empty))
 
-    assertGood(attach(CreateIndex(None, label("Label"), List(key("prop")), None), 63.2),
+    assertGood(attach(CreateIndex(None, label("Label"), List(key("prop")), None, Map.empty), 63.2),
       planDescription(id, "CreateIndex", NoChildren, Seq(details("INDEX FOR (:Label) ON (prop)")), Set.empty))
 
+    assertGood(attach(CreateIndex(None, label("Label"), List(key("prop")), Some("$indexName"), Map("indexProvider" -> stringLiteral("native-btree-1.0"))), 63.2),
+      planDescription(id, "CreateIndex", NoChildren, Seq(details("""INDEX `$indexName` FOR (:Label) ON (prop) OPTIONS {indexProvider: "native-btree-1.0"}""")), Set.empty))
+
     assertGood(attach(CreateIndex(Some(DoNothingIfExistsForIndex(label("Label"), List(key("prop")), None)),
-      label("Label"), List(key("prop")), None), 63.2),
+      label("Label"), List(key("prop")), None, Map.empty), 63.2),
       planDescription(id, "CreateIndex", SingleChild(
         planDescription(id, "DoNothingIfExists(INDEX)", NoChildren, Seq(details("INDEX FOR (:Label) ON (prop)")), Set.empty)
       ), Seq(details("INDEX FOR (:Label) ON (prop)")), Set.empty))
@@ -603,31 +614,37 @@ class LogicalPlan2PlanDescriptionTest extends CypherFunSuite with TableDrivenPro
   }
 
   test("CreateUniquePropertyConstraint") {
-    assertGood(attach(CreateUniquePropertyConstraint(None, " x", label("Label"), Seq(prop(" x", "prop")), None), 63.2),
+    assertGood(attach(CreateUniquePropertyConstraint(None, " x", label("Label"), Seq(prop(" x", "prop")), None, Map.empty), 63.2),
       planDescription(id, "CreateConstraint", NoChildren, Seq(details("CONSTRAINT ON (` x`:Label) ASSERT (` x`.prop) IS UNIQUE")), Set.empty))
 
-    assertGood(attach(CreateUniquePropertyConstraint(None, "x", label("Label"), Seq(prop("x", "prop")), Some("constraintName")), 63.2),
+    assertGood(attach(CreateUniquePropertyConstraint(None, "x", label("Label"), Seq(prop("x", "prop")), Some("constraintName"), Map.empty), 63.2),
       planDescription(id, "CreateConstraint", NoChildren, Seq(details("CONSTRAINT constraintName ON (x:Label) ASSERT (x.prop) IS UNIQUE")), Set.empty))
 
-    assertGood(attach(CreateUniquePropertyConstraint(None, "x", label("Label"), Seq(prop("x", "prop1"), prop("x", "prop2")), Some("constraintName")), 63.2),
+    assertGood(attach(CreateUniquePropertyConstraint(None, "x", label("Label"), Seq(prop("x", "prop1"), prop("x", "prop2")), Some("constraintName"), Map.empty), 63.2),
       planDescription(id, "CreateConstraint", NoChildren, Seq(details("CONSTRAINT constraintName ON (x:Label) ASSERT (x.prop1, x.prop2) IS UNIQUE")), Set.empty))
 
+    assertGood(attach(CreateUniquePropertyConstraint(None, "x", label("Label"), List(prop("x", "prop")), Some("$constraintName"), Map("indexProvider" -> stringLiteral("native-btree-1.0"))), 63.2),
+      planDescription(id, "CreateConstraint", NoChildren, Seq(details("""CONSTRAINT `$constraintName` ON (x:Label) ASSERT (x.prop) IS UNIQUE OPTIONS {indexProvider: "native-btree-1.0"}""")), Set.empty))
+
     assertGood(attach(CreateUniquePropertyConstraint(Some(DoNothingIfExistsForConstraint(" x", scala.util.Left(label("Label")), Seq(prop(" x", "prop")), Uniqueness, None)),
-      " x", label("Label"), Seq(prop(" x", "prop")), None), 63.2),
+      " x", label("Label"), Seq(prop(" x", "prop")), None, Map.empty), 63.2),
       planDescription(id, "CreateConstraint", SingleChild(
         planDescription(id, "DoNothingIfExists(CONSTRAINT)", NoChildren, Seq(details("CONSTRAINT ON (` x`:Label) ASSERT (` x`.prop) IS UNIQUE")), Set.empty)
       ), Seq(details("CONSTRAINT ON (` x`:Label) ASSERT (` x`.prop) IS UNIQUE")), Set.empty))
   }
 
   test("CreateNodeKeyConstraint") {
-    assertGood(attach(CreateNodeKeyConstraint(None, " x", label("Label"), Seq(prop(" x", "prop")), None), 63.2),
+    assertGood(attach(CreateNodeKeyConstraint(None, " x", label("Label"), Seq(prop(" x", "prop")), None, Map.empty), 63.2),
       planDescription(id, "CreateConstraint", NoChildren, Seq(details("CONSTRAINT ON (` x`:Label) ASSERT (` x`.prop) IS NODE KEY")), Set.empty))
 
-    assertGood(attach(CreateNodeKeyConstraint(None, "x", label("Label"), Seq(prop("x", "prop1"), prop("x", "prop2")), Some("constraintName")), 63.2),
+    assertGood(attach(CreateNodeKeyConstraint(None, "x", label("Label"), Seq(prop("x", "prop1"), prop("x", "prop2")), Some("constraintName"), Map.empty), 63.2),
       planDescription(id, "CreateConstraint", NoChildren, Seq(details("CONSTRAINT constraintName ON (x:Label) ASSERT (x.prop1, x.prop2) IS NODE KEY")), Set.empty))
 
+    assertGood(attach(CreateNodeKeyConstraint(None, "x", label("Label"), List(prop("x", "prop")), Some("$constraintName"), Map("indexProvider" -> stringLiteral("native-btree-1.0"))), 63.2),
+      planDescription(id, "CreateConstraint", NoChildren, Seq(details("""CONSTRAINT `$constraintName` ON (x:Label) ASSERT (x.prop) IS NODE KEY OPTIONS {indexProvider: "native-btree-1.0"}""")), Set.empty))
+
     assertGood(attach(CreateNodeKeyConstraint(Some(DoNothingIfExistsForConstraint(" x", scala.util.Left(label("Label")), Seq(prop(" x", "prop")), NodeKey, Some("constraintName"))),
-      " x", label("Label"), Seq(prop(" x", "prop")), Some("constraintName")), 63.2),
+      " x", label("Label"), Seq(prop(" x", "prop")), Some("constraintName"), Map.empty), 63.2),
       planDescription(id, "CreateConstraint", SingleChild(
         planDescription(id, "DoNothingIfExists(CONSTRAINT)", NoChildren, Seq(details("CONSTRAINT constraintName ON (` x`:Label) ASSERT (` x`.prop) IS NODE KEY")), Set.empty)
       ), Seq(details("CONSTRAINT constraintName ON (` x`:Label) ASSERT (` x`.prop) IS NODE KEY")), Set.empty))
@@ -789,7 +806,7 @@ class LogicalPlan2PlanDescriptionTest extends CypherFunSuite with TableDrivenPro
   test("Create") {
     val properties = MapExpression(Seq(
       (key("y"), number("1")),
-      (key("crs"), StringLiteral("cartesian")(pos))))(pos)
+      (key("crs"), stringLiteral("cartesian"))))(pos)
 
     assertGood(
       attach(Create(lhsLP, Seq(CreateNode("x", Seq.empty, None)), Seq(CreateRelationship("r", "x", relType("R"), "y", SemanticDirection.INCOMING, None))), 32.2),
@@ -968,7 +985,7 @@ class LogicalPlan2PlanDescriptionTest extends CypherFunSuite with TableDrivenPro
     // NOTE: currently tests only assert that we do NOT render anything other than the introduced variable
     val properties = MapExpression(Seq(
       (key("y"), number("1")),
-      (key("crs"), StringLiteral("cartesian")(pos))))(pos)
+      (key("crs"), stringLiteral("cartesian"))))(pos)
 
     assertGood(attach(MergeCreateNode(lhsLP, "x", Seq(label("L1"), label("L2")), Some(properties)), 113.0),
       planDescription(id, "MergeCreateNode", SingleChild(lhsPD), Seq(details("x")), Set("a", "x")))
@@ -1118,6 +1135,8 @@ class LogicalPlan2PlanDescriptionTest extends CypherFunSuite with TableDrivenPro
 
     assertGood(attach(ShowUsers(privLhsLP, List(), None, None), 1.0), adminPlanDescription)
 
+    assertGood(attach(ShowCurrentUser(List(), None, None), 1.0), adminPlanDescription)
+
     assertGood(attach(
       CreateUser(privLhsLP, util.Left("name"), isEncryptedPassword = false, varFor("password"), requirePasswordChange = false, suspended = None),1.0), adminPlanDescription)
 
@@ -1125,7 +1144,7 @@ class LogicalPlan2PlanDescriptionTest extends CypherFunSuite with TableDrivenPro
 
     assertGood(attach(AlterUser(privLhsLP, util.Left("name"), isEncryptedPassword = Some(true), None, requirePasswordChange = Some(true), suspended = Some(false)), 1.0), adminPlanDescription)
 
-    assertGood(attach(SetOwnPassword(StringLiteral("oldPassword")(pos), StringLiteral("newPassword")(pos)), 1.0), adminPlanDescription)
+    assertGood(attach(SetOwnPassword(stringLiteral("oldPassword"), stringLiteral("newPassword")), 1.0), adminPlanDescription)
 
     assertGood(attach(ShowRoles(privLhsLP, withUsers = false, showAll = true, List(), None, None), 1.0), adminPlanDescription)
 
@@ -1178,6 +1197,10 @@ class LogicalPlan2PlanDescriptionTest extends CypherFunSuite with TableDrivenPro
       ShowPrivileges(Some(privLhsLP), ShowUsersPrivileges(List(util.Left("user1"), util.Right(parameter("user2", CTString))))(pos), List(), None, None),
       1.0), adminPlanDescription)
 
+    assertGood(attach(
+      ShowPrivilegeCommands(Some(privLhsLP), ShowUsersPrivileges(List(util.Left("user1"), util.Right(parameter("user2", CTString))))(pos), asRevoke = false, List(), None, None),
+      1.0), adminPlanDescription)
+
     assertGood(attach(ShowDatabase(ast.AllDatabasesScope()(pos), List("foo", "bar"), None, None), 1.0), adminPlanDescription)
 
     assertGood(attach(CreateDatabase(privLhsLP, util.Left("db1")), 1.0), adminPlanDescription)
@@ -1207,6 +1230,10 @@ class LogicalPlan2PlanDescriptionTest extends CypherFunSuite with TableDrivenPro
     assertGood(attach(AssertDatabaseAdmin(StopDatabaseAction, util.Left("db1")), 1.0), adminPlanDescription)
 
     assertGood(attach(AssertNotBlocked(privLhsLP, CreateDatabaseAction), 1.0), adminPlanDescription)
+
+    assertGood(attach(WaitForCompletion(
+      StartDatabase(
+        plans.AssertDatabaseAdmin(StartDatabaseAction, Left("db1")), Left("db1")), util.Left("db1"), IndefiniteWait), 1.0), adminPlanDescription)
   }
 
   test("AntiConditionalApply") {
@@ -1312,6 +1339,19 @@ class LogicalPlan2PlanDescriptionTest extends CypherFunSuite with TableDrivenPro
       planDescription(id, "SemiApply", TwoChildren(lhsPD, rhsPD), Seq.empty, Set("a")))
   }
 
+  test("TriadicBuild") {
+    assertGood(attach(TriadicBuild(lhsLP, "a", "b", Some(Id(1))), 113.0),
+      planDescription(id, "TriadicBuild", SingleChild(lhsPD), Seq(details("(a)--(b)")), Set("a")))
+  }
+
+  test("TriadicFilter") {
+    assertGood(attach(TriadicFilter(lhsLP, positivePredicate = true, "a", "b", Some(Id(1))), 113.0),
+      planDescription(id, "TriadicFilter", SingleChild(lhsPD), Seq(details("WHERE (a)--(b)")), Set("a")))
+
+    assertGood(attach(TriadicFilter(lhsLP, positivePredicate = false, "a", "b", Some(Id(1))), 113.0),
+      planDescription(id, "TriadicFilter", SingleChild(lhsPD), Seq(details("WHERE NOT (a)--(b)")), Set("a")))
+  }
+
   test("TriadicSelection") {
     assertGood(attach(TriadicSelection(lhsLP, rhsLP, positivePredicate = true, "a", "b", "c"), 2345.0),
       planDescription(id, "TriadicSelection", TwoChildren(lhsPD, rhsPD), Seq(details("WHERE (a)--(c)")), Set("a", "b")))
@@ -1393,4 +1433,6 @@ class LogicalPlan2PlanDescriptionTest extends CypherFunSuite with TableDrivenPro
   private def number(i: String): SignedDecimalIntegerLiteral = SignedDecimalIntegerLiteral(i)(pos)
 
   private def parameter(p: String, t: CypherType): Parameter = Parameter(p, t)(pos)
+
+  private def stringLiteral(s: String): StringLiteral = StringLiteral(s)(pos)
 }

@@ -705,6 +705,33 @@ class LogicalPlanToLogicalPlanBuilderStringTest extends CypherFunSuite with Test
                                  _.indexSeek("m:Label(prop=6)"))
      .build())
 
+  testPlan("triadicSelection",
+    new TestPlanBuilder()
+      .produceResults("x", "y", "z")
+      .triadicSelection(positivePredicate = false, "x", "y", "z")
+      .|.expandAll("(y)-[r2]->(z)")
+      .|.argument("x", "y")
+      .expandAll("(x)-[r1]->(y)")
+      .allNodeScan("x")
+      .build())
+
+  testPlan("triadicBuild",
+    new TestPlanBuilder()
+      .produceResults("n")
+      .triadicFilter(42, positivePredicate = true, "n", "n")
+      .triadicBuild(42, "n", "n")
+      .allNodeScan("n")
+      .build())
+
+  testPlan("triadicFilter",
+    new TestPlanBuilder()
+      .produceResults("n")
+      .triadicFilter(42, positivePredicate = true, "n", "n")
+      .triadicBuild(42, "n", "n")
+      .allNodeScan("n")
+      .build())
+
+
   testPlan("injectValue",
     new TestPlanBuilder()
       .produceResults("x")

@@ -153,7 +153,7 @@ class PrettifierIT extends CypherFunSuite {
       "create INDEX FOR (n:A) ON (n.p)" ->
         "CREATE INDEX FOR (n:A) ON (n.p)",
 
-      "create INDEX FOR (n:A) ON (n.p1, n.p2, n.p3)" ->
+      "create btree INDEX FOR (n:A) ON (n.p1, n.p2, n.p3)" ->
         "CREATE INDEX FOR (n:A) ON (n.p1, n.p2, n.p3)",
 
       "create INDEX foo FOR (n:A) ON (n.p)" ->
@@ -164,6 +164,21 @@ class PrettifierIT extends CypherFunSuite {
 
       "create INDEX `$foo` FOR (n:A) ON (n.p1, n.p2, n.p3)" ->
         "CREATE INDEX `$foo` FOR (n:A) ON (n.p1, n.p2, n.p3)",
+
+      "CREATE index FOR (n:Person) on (n.name) OPtiONS {indexProvider: 'native-btree-1.0'}" ->
+        """CREATE INDEX FOR (n:Person) ON (n.name) OPTIONS {indexProvider: "native-btree-1.0"}""",
+
+      "create BTREE INDEX for (n:Person) ON (n.name) OPTIONS {`indexProvider`: 'lucene+native-3.0', indexConfig: {`spatial.cartesian.max`: [100.0,100.0], `spatial.cartesian.min`: [-100.0,-100.0] }}" ->
+        """CREATE INDEX FOR (n:Person) ON (n.name) OPTIONS {indexProvider: "lucene+native-3.0", indexConfig: {`spatial.cartesian.max`: [100.0, 100.0], `spatial.cartesian.min`: [-100.0, -100.0]}}""",
+
+      "create BTREE INDEX myIndex for (n:Person) ON (n.name) OPTIONS {indexConfig: {`spatial.wgs-84.max`: [60.0,40.0], `spatial.wgs-84.min`: [-60.0,-40.0] }}" ->
+        """CREATE INDEX myIndex FOR (n:Person) ON (n.name) OPTIONS {indexConfig: {`spatial.wgs-84.max`: [60.0, 40.0], `spatial.wgs-84.min`: [-60.0, -40.0]}}""",
+
+      "CREATE index FOR (n:Person) on (n.name) OPtiONS {nonValidOption : 42, `backticks.stays.when.needed`: 'theAnswer'}" ->
+        """CREATE INDEX FOR (n:Person) ON (n.name) OPTIONS {nonValidOption: 42, `backticks.stays.when.needed`: "theAnswer"}""",
+
+      "CREATE index FOR (n:Person) on (n.name) OPtiONS {}" ->
+        """CREATE INDEX FOR (n:Person) ON (n.name)""",
 
       "create or REPLACE INDEX FOR (n:A) ON (n.p)" ->
         "CREATE OR REPLACE INDEX FOR (n:A) ON (n.p)",
@@ -225,6 +240,21 @@ class PrettifierIT extends CypherFunSuite {
       "create CONSTRAINT `$foo` ON (n:A) ASSERT (n.p1, n.p2) IS NODE KEY" ->
         "CREATE CONSTRAINT `$foo` ON (n:A) ASSERT (n.p1, n.p2) IS NODE KEY",
 
+      "CREATE constraint ON (n:A) ASSERT (n.p) IS NODE KEY OPtiONS {indexProvider: 'native-btree-1.0'}" ->
+        """CREATE CONSTRAINT ON (n:A) ASSERT (n.p) IS NODE KEY OPTIONS {indexProvider: "native-btree-1.0"}""",
+
+      "create CONSTRAINT myConstraint ON (n:A) assert (n.p) IS NODE KEY OPTIONS {`indexProvider`: 'lucene+native-3.0', indexConfig: {`spatial.cartesian.max`: [100.0,100.0], `spatial.cartesian.min`: [-100.0,-100.0] }}" ->
+        """CREATE CONSTRAINT myConstraint ON (n:A) ASSERT (n.p) IS NODE KEY OPTIONS {indexProvider: "lucene+native-3.0", indexConfig: {`spatial.cartesian.max`: [100.0, 100.0], `spatial.cartesian.min`: [-100.0, -100.0]}}""",
+
+      "create CONSTRAINT ON (n:A) assert (n.p) IS NODE KEY OPTIONS {indexConfig: {`spatial.wgs-84.max`: [60.0,40.0], `spatial.wgs-84.min`: [-60.0,-40.0] }}" ->
+        """CREATE CONSTRAINT ON (n:A) ASSERT (n.p) IS NODE KEY OPTIONS {indexConfig: {`spatial.wgs-84.max`: [60.0, 40.0], `spatial.wgs-84.min`: [-60.0, -40.0]}}""",
+
+      "CREATE constraint ON (n:A) ASSERT (n.p) IS NODE KEY OPtiONS {nonValidOption : 42, `backticks.stays.when.needed`: 'theAnswer'}" ->
+        """CREATE CONSTRAINT ON (n:A) ASSERT (n.p) IS NODE KEY OPTIONS {nonValidOption: 42, `backticks.stays.when.needed`: "theAnswer"}""",
+
+      "CREATE constraint ON (n:A) ASSERT (n.p) IS NODE KEY OPtiONS {}" ->
+        """CREATE CONSTRAINT ON (n:A) ASSERT (n.p) IS NODE KEY""",
+
       "drop CONSTRAINT ON (n:A) ASSERT (n.p) IS NODE KEY" ->
         "DROP CONSTRAINT ON (n:A) ASSERT (n.p) IS NODE KEY",
 
@@ -248,6 +278,21 @@ class PrettifierIT extends CypherFunSuite {
 
       "create or REPLACE CONSTRAINT foo ON (n:A) ASSERT n.p IS UNIQUE" ->
         "CREATE OR REPLACE CONSTRAINT foo ON (n:A) ASSERT (n.p) IS UNIQUE",
+
+      "CREATE constraint ON (n:A) ASSERT (n.p) IS UNIQUE OPtiONS {indexProvider: 'native-btree-1.0'}" ->
+        """CREATE CONSTRAINT ON (n:A) ASSERT (n.p) IS UNIQUE OPTIONS {indexProvider: "native-btree-1.0"}""",
+
+      "create CONSTRAINT myConstraint ON (n:A) assert (n.p) IS UNIQUE OPTIONS {`indexProvider`: 'lucene+native-3.0', indexConfig: {`spatial.cartesian.max`: [100.0,100.0], `spatial.cartesian.min`: [-100.0,-100.0] }}" ->
+        """CREATE CONSTRAINT myConstraint ON (n:A) ASSERT (n.p) IS UNIQUE OPTIONS {indexProvider: "lucene+native-3.0", indexConfig: {`spatial.cartesian.max`: [100.0, 100.0], `spatial.cartesian.min`: [-100.0, -100.0]}}""",
+
+      "create CONSTRAINT ON (n:A) assert (n.p) IS UNIQUE OPTIONS {indexConfig: {`spatial.wgs-84.max`: [60.0,40.0], `spatial.wgs-84.min`: [-60.0,-40.0] }}" ->
+        """CREATE CONSTRAINT ON (n:A) ASSERT (n.p) IS UNIQUE OPTIONS {indexConfig: {`spatial.wgs-84.max`: [60.0, 40.0], `spatial.wgs-84.min`: [-60.0, -40.0]}}""",
+
+      "CREATE constraint ON (n:A) ASSERT (n.p) IS UNIQUE OPtiONS {nonValidOption : 42, `backticks.stays.when.needed`: 'theAnswer'}" ->
+        """CREATE CONSTRAINT ON (n:A) ASSERT (n.p) IS UNIQUE OPTIONS {nonValidOption: 42, `backticks.stays.when.needed`: "theAnswer"}""",
+
+      "CREATE constraint ON (n:A) ASSERT (n.p) IS UNIQUE OPtiONS {}" ->
+        """CREATE CONSTRAINT ON (n:A) ASSERT (n.p) IS UNIQUE""",
 
       "create CONSTRAINT ON (n:A) ASSERT (n.p1, n.p2) IS UNIQUE" ->
         "CREATE CONSTRAINT ON (n:A) ASSERT (n.p1, n.p2) IS UNIQUE",
@@ -337,6 +382,58 @@ class PrettifierIT extends CypherFunSuite {
           |MATCH (n)
           |UNION ALL
           |RETURN $node AS n""".stripMargin,
+
+      "Show Users" ->
+        "SHOW USERS",
+
+      "Show Users where user = 'neo4j'" ->
+        """SHOW USERS
+          |  WHERE user = "neo4j"""".stripMargin,
+
+      "Show Users YIELD * where user = 'neo4j' Return *" ->
+        """SHOW USERS
+          |  YIELD *
+          |    WHERE user = "neo4j"
+          |  RETURN *""".stripMargin,
+
+      "Show Users YIELD * Return DISTINCT roles, user" ->
+        """SHOW USERS
+          |  YIELD *
+          |  RETURN DISTINCT roles, user""".stripMargin,
+
+      "show users yield user order by user skip 1 limit 1 where user='neo4j'" ->
+        """SHOW USERS
+          |  YIELD user
+          |    ORDER BY user ASCENDING
+          |    SKIP 1
+          |    LIMIT 1
+          |    WHERE user = "neo4j"""".stripMargin,
+
+      "Show Current User" ->
+        "SHOW CURRENT USER",
+
+      "Show Current User where user = 'neo4j'" ->
+        """SHOW CURRENT USER
+          |  WHERE user = "neo4j"""".stripMargin,
+
+      "Show Current User YIELD * where user = 'neo4j' Return *" ->
+        """SHOW CURRENT USER
+          |  YIELD *
+          |    WHERE user = "neo4j"
+          |  RETURN *""".stripMargin,
+
+      "Show Current User YIELD * Return DISTINCT roles, user" ->
+        """SHOW CURRENT USER
+          |  YIELD *
+          |  RETURN DISTINCT roles, user""".stripMargin,
+
+      "show current user yield user order by user skip 1 limit 1 where user='neo4j'" ->
+        """SHOW CURRENT USER
+          |  YIELD user
+          |    ORDER BY user ASCENDING
+          |    SKIP 1
+          |    LIMIT 1
+          |    WHERE user = "neo4j"""".stripMargin,
 
       "create user abc set password 'foo'" ->
         "CREATE USER abc SET PASSWORD '******' CHANGE REQUIRED",
@@ -464,6 +561,110 @@ class PrettifierIT extends CypherFunSuite {
       "alter current user set password from $currentPassword to $newPassword" ->
         "ALTER CURRENT USER SET PASSWORD FROM $currentPassword TO $newPassword",
 
+      "Show Roles" ->
+        "SHOW ALL ROLES",
+
+      "Show roles where role = 'admin'" ->
+        """SHOW ALL ROLES
+          |  WHERE role = "admin"""".stripMargin,
+
+      "Show Roles YIELD * where role = 'admin' Return *" ->
+        """SHOW ALL ROLES
+          |  YIELD *
+          |    WHERE role = "admin"
+          |  RETURN *""".stripMargin,
+
+      "Show Roles YIELD * Return DISTINCT role" ->
+        """SHOW ALL ROLES
+          |  YIELD *
+          |  RETURN DISTINCT role""".stripMargin,
+
+      "show roles yield role order by role skip 1 limit 1 where role='admin'" ->
+        """SHOW ALL ROLES
+          |  YIELD role
+          |    ORDER BY role ASCENDING
+          |    SKIP 1
+          |    LIMIT 1
+          |    WHERE role = "admin"""".stripMargin,
+
+      "Show Roles with users" ->
+        "SHOW ALL ROLES WITH USERS",
+
+      "Show roles with users where role = 'admin'" ->
+        """SHOW ALL ROLES WITH USERS
+          |  WHERE role = "admin"""".stripMargin,
+
+      "Show roles with users YIELD * where member = 'neo4j' Return *" ->
+        """SHOW ALL ROLES WITH USERS
+          |  YIELD *
+          |    WHERE member = "neo4j"
+          |  RETURN *""".stripMargin,
+
+      "Show roles with users YIELD * Return DISTINCT member, role" ->
+        """SHOW ALL ROLES WITH USERS
+          |  YIELD *
+          |  RETURN DISTINCT member, role""".stripMargin,
+
+      "show roles with users yield member order by member skip 1 limit 1 where member='neo4j'" ->
+        """SHOW ALL ROLES WITH USERS
+          |  YIELD member
+          |    ORDER BY member ASCENDING
+          |    SKIP 1
+          |    LIMIT 1
+          |    WHERE member = "neo4j"""".stripMargin,
+
+      "Show Populated Roles" ->
+        "SHOW POPULATED ROLES",
+
+      "Show Populated roles where role = 'admin'" ->
+        """SHOW POPULATED ROLES
+          |  WHERE role = "admin"""".stripMargin,
+
+      "Show populated Roles YIELD * where role = 'admin' Return *" ->
+        """SHOW POPULATED ROLES
+          |  YIELD *
+          |    WHERE role = "admin"
+          |  RETURN *""".stripMargin,
+
+      "Show populated Roles YIELD * Return DISTINCT role" ->
+        """SHOW POPULATED ROLES
+          |  YIELD *
+          |  RETURN DISTINCT role""".stripMargin,
+
+      "show Populated roles yield role order by role skip 1 limit 1 where role='admin'" ->
+        """SHOW POPULATED ROLES
+          |  YIELD role
+          |    ORDER BY role ASCENDING
+          |    SKIP 1
+          |    LIMIT 1
+          |    WHERE role = "admin"""".stripMargin,
+
+      "Show Populated Roles with users" ->
+        "SHOW POPULATED ROLES WITH USERS",
+
+      "Show Populated roles with users where member = 'neo4j'" ->
+        """SHOW POPULATED ROLES WITH USERS
+          |  WHERE member = "neo4j"""".stripMargin,
+
+      "Show populated roles with users YIELD * where role = 'admin' Return *" ->
+        """SHOW POPULATED ROLES WITH USERS
+          |  YIELD *
+          |    WHERE role = "admin"
+          |  RETURN *""".stripMargin,
+
+      "Show populated roles with users YIELD * Return DISTINCT member, role" ->
+        """SHOW POPULATED ROLES WITH USERS
+          |  YIELD *
+          |  RETURN DISTINCT member, role""".stripMargin,
+
+      "show Populated roles with users yield member order by member skip 1 limit 1 where member='neo4j'" ->
+        """SHOW POPULATED ROLES WITH USERS
+          |  YIELD member
+          |    ORDER BY member ASCENDING
+          |    SKIP 1
+          |    LIMIT 1
+          |    WHERE member = "neo4j"""".stripMargin,
+
       "create role abc" ->
         "CREATE ROLE abc",
 
@@ -555,8 +756,19 @@ class PrettifierIT extends CypherFunSuite {
         """SHOW ALL PRIVILEGES
           |  WHERE action = "match"""".stripMargin,
 
-      "show users yield user order by user skip 1 limit 1 where user='neo4j'" ->
-        """SHOW USERS
+      "Show privileges YIELD * where action = 'match' Return *" ->
+        """SHOW ALL PRIVILEGES
+          |  YIELD *
+          |    WHERE action = "match"
+          |  RETURN *""".stripMargin,
+
+      "Show privileges YIELD * Return DISTINCT action, role" ->
+        """SHOW ALL PRIVILEGES
+          |  YIELD *
+          |  RETURN DISTINCT action, role""".stripMargin,
+
+      "show user privileges yield user order by user skip 1 limit 1 where user='neo4j'" ->
+        """SHOW USER PRIVILEGES
           |  YIELD user
           |    ORDER BY user ASCENDING
           |    SKIP 1
@@ -605,8 +817,58 @@ class PrettifierIT extends CypherFunSuite {
       "show roles $role1,abc, $role2,$role3 privileges" ->
         "SHOW ROLES $role1, abc, $role2, $role3 PRIVILEGES",
 
+      "show privileges as command" ->
+        "SHOW ALL PRIVILEGES AS COMMANDS",
+
+      "show privileges as commands" ->
+        "SHOW ALL PRIVILEGES AS COMMANDS",
+
+      "show privileges as revoke command" ->
+        "SHOW ALL PRIVILEGES AS REVOKE COMMANDS",
+
+      "show user privileges as revoke command" ->
+        "SHOW USER PRIVILEGES AS REVOKE COMMANDS",
+
+      "show user user privileges as command" ->
+        "SHOW USER user PRIVILEGES AS COMMANDS",
+
+"show user $bar privileges as command" ->
+        "SHOW USER $bar PRIVILEGES AS COMMANDS",
+        
+      "show user foo, $bar privileges as command" ->
+        "SHOW USERS foo, $bar PRIVILEGES AS COMMANDS",
+
+      "show role role privileges as revoke command" ->
+        "SHOW ROLE role PRIVILEGES AS REVOKE COMMANDS",
+
+"show role $bar privileges as command" ->
+        "SHOW ROLE $bar PRIVILEGES AS COMMANDS",
+
+      "show role foo, $bar privileges as command" ->
+        "SHOW ROLES foo, $bar PRIVILEGES AS COMMANDS",
+
+      "show privileges as revoke command yield command order by command" ->
+        """SHOW ALL PRIVILEGES AS REVOKE COMMANDS
+          |  YIELD command
+          |    ORDER BY command ASCENDING""".stripMargin,
+
+      "show user privileges as commands where command CONTAINS 'MATCH' and command CONTAINS 'NODE'" ->
+        """SHOW USER PRIVILEGES AS COMMANDS
+          |  WHERE command CONTAINS "MATCH" AND command CONTAINS "NODE"""".stripMargin,
+
       "catalog show databases" ->
         "SHOW DATABASES",
+
+      "Show Databases YIELD * where name = 'neo4j' Return *" ->
+        """SHOW DATABASES
+          |  YIELD *
+          |    WHERE name = "neo4j"
+          |  RETURN *""".stripMargin,
+
+      "Show Databases YIELD * Return DISTINCT default, name" ->
+        """SHOW DATABASES
+          |  YIELD *
+          |  RETURN DISTINCT default, name""".stripMargin,
 
       "catalog show default database" ->
         "SHOW DEFAULT DATABASE",
@@ -646,6 +908,15 @@ class PrettifierIT extends CypherFunSuite {
       "catalog create database graph.db" ->
         "CREATE DATABASE `graph.db`",
 
+      "catalog create database graph.db wait" ->
+        "CREATE DATABASE `graph.db` WAIT",
+
+      "catalog create database graph.db nowait" ->
+        "CREATE DATABASE `graph.db`",
+
+      "catalog create database graph.db if not exists wait" ->
+        "CREATE DATABASE `graph.db` IF NOT EXISTS WAIT",
+
       "catalog DROP database foO_Bar_42" ->
         "DROP DATABASE foO_Bar_42 DESTROY DATA",
 
@@ -654,6 +925,9 @@ class PrettifierIT extends CypherFunSuite {
 
       "catalog DROP database foO_Bar_42 if EXISTS" ->
         "DROP DATABASE foO_Bar_42 IF EXISTS DESTROY DATA",
+
+      "catalog DROP database blah if EXISTS WAIT" ->
+        "DROP DATABASE blah IF EXISTS DESTROY DATA WAIT",
 
       "DROP database foO_Bar_42 dump Data" ->
         "DROP DATABASE foO_Bar_42 DUMP DATA",
@@ -1194,6 +1468,24 @@ class PrettifierIT extends CypherFunSuite {
 
           s"$action execute administrator procedures on dbms $preposition role" ->
             s"$action EXECUTE ADMIN PROCEDURES ON DBMS $preposition role",
+
+          s"$action execute function * on dbms $preposition role" ->
+            s"$action EXECUTE USER DEFINED FUNCTION * ON DBMS $preposition role",
+
+          s"$action execute user function * on dbms $preposition role" ->
+            s"$action EXECUTE USER DEFINED FUNCTION * ON DBMS $preposition role",
+
+          s"$action execute user defined functions * on dbms $preposition role" ->
+            s"$action EXECUTE USER DEFINED FUNCTION * ON DBMS $preposition role",
+
+          s"$action execute boosted function math.sin, ma*.`*/a?`,math.`c%s` on dbms $preposition role" ->
+            s"$action EXECUTE BOOSTED USER DEFINED FUNCTION math.sin, ma*.`*/a?`, math.`c%s` ON DBMS $preposition role",
+
+          s"$action execute boosted user function apoc.math on dbms $preposition role" ->
+            s"$action EXECUTE BOOSTED USER DEFINED FUNCTION apoc.math ON DBMS $preposition role",
+
+          s"$action execute boosted user defined functions ??? on dbms $preposition role" ->
+            s"$action EXECUTE BOOSTED USER DEFINED FUNCTION ??? ON DBMS $preposition role",
       )
     }
   }

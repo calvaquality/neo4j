@@ -21,33 +21,27 @@ package org.neo4j.logging.internal;
 
 import org.neo4j.logging.AbstractLogProvider;
 import org.neo4j.logging.LogProvider;
-import org.neo4j.logging.NullLogProvider;
 
-public class DatabaseLogProvider extends AbstractLogProvider<DatabaseLog>
+public class PrefixedLogProvider extends AbstractLogProvider<PrefixedLog>
 {
-    private final DatabaseLogContext logContext;
-    private final LogProvider delegate;
+    private final LogProvider logProvider;
+    private final String prefix;
 
-    public DatabaseLogProvider( DatabaseLogContext logContext, LogProvider delegate )
+    public PrefixedLogProvider( LogProvider logProvider, String prefix )
     {
-        this.logContext = logContext;
-        this.delegate = delegate;
-    }
-
-    public static DatabaseLogProvider nullDatabaseLogProvider()
-    {
-        return new DatabaseLogProvider( null, NullLogProvider.getInstance() );
+        this.logProvider = logProvider;
+        this.prefix = prefix;
     }
 
     @Override
-    protected DatabaseLog buildLog( Class<?> loggingClass )
+    protected PrefixedLog buildLog( Class<?> loggingClass )
     {
-        return new DatabaseLog( logContext, delegate.getLog( loggingClass ) );
+        return new PrefixedLog( prefix, logProvider.getLog( loggingClass ) );
     }
 
     @Override
-    protected DatabaseLog buildLog( String name )
+    protected PrefixedLog buildLog( String name )
     {
-        return new DatabaseLog( logContext, delegate.getLog( name ) );
+        return new PrefixedLog( prefix, logProvider.getLog( name ) );
     }
 }

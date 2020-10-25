@@ -47,6 +47,8 @@ public interface GlobalProcedures
 
     void register( CallableUserFunction function, boolean overrideCurrentImplementation ) throws ProcedureException;
 
+    void registerBuiltIn( CallableUserFunction function ) throws ProcedureException;
+
     void register( CallableUserAggregationFunction function, boolean overrideCurrentImplementation ) throws ProcedureException;
 
     void register( CallableProcedure proc, boolean overrideCurrentImplementation ) throws ProcedureException;
@@ -76,6 +78,14 @@ public interface GlobalProcedures
     UserFunctionHandle function( QualifiedName name );
 
     UserFunctionHandle aggregationFunction( QualifiedName name );
+
+    int[] getIdsOfFunctionsMatching( Predicate<CallableUserFunction> predicate );
+
+    int[] getIdsOfAggregatingFunctionsMatching( Predicate<CallableUserAggregationFunction> predicate );
+
+    boolean isBuiltInFunction( int id );
+
+    boolean isBuiltInAggregatingFunction( int id );
 
     Set<ProcedureSignature> getAllProcedures();
 

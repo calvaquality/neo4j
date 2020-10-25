@@ -27,9 +27,10 @@ import org.neo4j.cypher.internal.runtime.spec.Edition
 import org.neo4j.cypher.internal.runtime.spec.LogicalQueryBuilder
 import org.neo4j.cypher.internal.runtime.spec.RuntimeTestSuite
 import org.neo4j.exceptions.EntityNotFoundException
-import org.neo4j.graphdb.Label
+import org.neo4j.graphdb.Label.label
 import org.neo4j.graphdb.Node
 import org.neo4j.graphdb.Relationship
+import org.neo4j.graphdb.RelationshipType
 import org.neo4j.values.storable.Values.NO_VALUE
 import org.neo4j.values.storable.Values.intValue
 import org.neo4j.values.virtual.VirtualValues.list
@@ -42,7 +43,7 @@ abstract class ExpressionTestBase[CONTEXT <: RuntimeContext](edition: Edition[CO
     given {
       for (i <- 0 until size) {
         if (i % 2 == 0) {
-          tx.createNode(Label.label("Label"))
+          tx.createNode(label("Label"))
         } else {
           tx.createNode()
         }
@@ -68,9 +69,9 @@ abstract class ExpressionTestBase[CONTEXT <: RuntimeContext](edition: Edition[CO
       index("Label", "prop")
       for (i <- 0 until size) {
         if (i % 2 == 0) {
-          tx.createNode(Label.label("Label"), Label.label("Other")).setProperty("prop", i)
+          tx.createNode(label("Label"), label("Other")).setProperty("prop", i)
         } else {
-          tx.createNode(Label.label("Label")).setProperty("prop", i)
+          tx.createNode(label("Label")).setProperty("prop", i)
         }
       }
     }
@@ -94,9 +95,9 @@ abstract class ExpressionTestBase[CONTEXT <: RuntimeContext](edition: Edition[CO
       index("Label", "prop")
       for (i <- 0 until size) {
         if (i % 2 == 0) {
-          tx.createNode(Label.label("Label"), Label.label("Other")).setProperty("prop", i)
+          tx.createNode(label("Label"), label("Other")).setProperty("prop", i)
         } else {
-          tx.createNode(Label.label("Label")).setProperty("prop", i)
+          tx.createNode(label("Label")).setProperty("prop", i)
         }
       }
     }
@@ -115,7 +116,7 @@ abstract class ExpressionTestBase[CONTEXT <: RuntimeContext](edition: Edition[CO
 
   test("hasLabel is false on non-existing node") {
     // given
-    given { tx.createNode(Label.label("Label")) }
+    given { tx.createNode(label("Label")) }
     val node = mock[Node]
     when(node.getId).thenReturn(1337L)
 
@@ -493,6 +494,90 @@ abstract class ExpressionTestBase[CONTEXT <: RuntimeContext](edition: Edition[CO
     val expected = for (i <- 0 until size) yield Array[Any](i, true)
     runtimeResult should beColumns("x", "y").withRows(expected)
   }
+
+  test("AND: should fail if all predicates fail for some input") {
+
+    // when
+    val logicalQuery = new LogicalQueryBuilder(this)
+      .produceResults("y")
+      .projection("1/x > 1 AND 1/x > 1 AND 1/x > 1 AS y")
+      .input(variables = Seq("x"))
+      .build()
+
+    val runtimeResult = execute(logicalQuery, runtime, inputValues(Array[Any](1), Array[Any](0), Array[Any](1)))
+
+    an[org.neo4j.exceptions.ArithmeticException] should be thrownBy consume(runtimeResult)
+  }
+
+  test("AND: should return FALSE if at least one predicate is FALSE") {
+
+    // when
+    val logicalQuery = new LogicalQueryBuilder(this)
+      .produceResults("y")
+      .projection("1/x > 1 AND TRUE AND FALSE AS y")
+      .input(variables = Seq("x"))
+      .build()
+
+    val runtimeResult = execute(logicalQuery, runtime, inputValues(Array[Any](1), Array[Any](0), Array[Any](1)))
+
+    runtimeResult should beColumns("y").withRows(singleColumn(List(false, false, false)))
+  }
+
+  test("AND: should fail if one predicate fails and no other is FALSE") {
+
+    // when
+    val logicalQuery = new LogicalQueryBuilder(this)
+      .produceResults("y")
+      .projection("1/x > 1 AND TRUE AND TRUE AS y")
+      .input(variables = Seq("x"))
+      .build()
+
+    val runtimeResult = execute(logicalQuery, runtime, inputValues(Array[Any](1), Array[Any](0), Array[Any](1)))
+
+    an[org.neo4j.exceptions.ArithmeticException] should be thrownBy consume(runtimeResult)
+  }
+
+  test("OR: should fail if all predicates fail for some input") {
+
+    // when
+    val logicalQuery = new LogicalQueryBuilder(this)
+      .produceResults("y")
+      .projection("1/x > 0 OR 1/x > 0 OR 1/x > 0 AS y")
+      .input(variables = Seq("x"))
+      .build()
+
+    val runtimeResult = execute(logicalQuery, runtime, inputValues(Array[Any](1), Array[Any](0), Array[Any](1)))
+
+    an[org.neo4j.exceptions.ArithmeticException] should be thrownBy consume(runtimeResult)
+  }
+
+  test("OR: should return TRUE if at least one predicate is TRUE") {
+
+    // when
+    val logicalQuery = new LogicalQueryBuilder(this)
+      .produceResults("y")
+      .projection("1/x > 0 OR FALSE OR TRUE AS y")
+      .input(variables = Seq("x"))
+      .build()
+
+    val runtimeResult = execute(logicalQuery, runtime, inputValues(Array[Any](1), Array[Any](0), Array[Any](1)))
+
+    runtimeResult should beColumns("y").withRows(singleColumn(List(true, true, true)))
+  }
+
+  test("OR: should fail if one predicate fails and no other is FALSE") {
+
+    // when
+    val logicalQuery = new LogicalQueryBuilder(this)
+      .produceResults("y")
+      .projection("1/x > 0 OR FALSE OR FALSE AS y")
+      .input(variables = Seq("x"))
+      .build()
+
+    val runtimeResult = execute(logicalQuery, runtime, inputValues(Array[Any](1), Array[Any](0), Array[Any](1)))
+
+    an[org.neo4j.exceptions.ArithmeticException] should be thrownBy consume(runtimeResult)
+  }
 }
 
 // Supported by all non-parallel runtimes
@@ -525,7 +610,7 @@ trait ExpressionWithTxStateChangesTests[CONTEXT <: RuntimeContext] {
 
   test("hasLabel is false on deleted node") {
     // given
-    val node = given { tx.createNode(Label.label("Label")) }
+    val node = given { tx.createNode(label("Label")) }
 
     // when
     val logicalQuery = new LogicalQueryBuilder(this)
@@ -619,5 +704,125 @@ trait ExpressionWithTxStateChangesTests[CONTEXT <: RuntimeContext] {
     // then
     val expected = for (i <- 0 until size) yield Array[Any](if (i >= 5) true else null)
     runtimeResult should beColumns("y").withRows(expected)
+  }
+
+  test("hasType on top of expand all") {
+    // given
+    val size = 100
+    given {
+      for (i <- 0 until size) {
+        if (i % 2 == 0) {
+          tx.createNode().createRelationshipTo(tx.createNode(), RelationshipType.withName("A"))
+        } else {
+          tx.createNode().createRelationshipTo(tx.createNode(), RelationshipType.withName("B"))
+        }
+      }
+    }
+    // when
+    val logicalQuery = new LogicalQueryBuilder(this)
+      .produceResults("hasType")
+      .projection("r:A AS hasType")
+      .expand("(x)-[r]->(y)")
+      .allNodeScan("x")
+      .build()
+
+    val runtimeResult = execute(logicalQuery, runtime)
+
+    // then
+    runtimeResult should beColumns("hasType").withRows(singleColumn((0 until size).map(_ % 2 == 0)))
+  }
+
+  test("hasType on top of expand into") {
+    // given
+    val size = 100
+    given {
+      for (i <- 0 until size) {
+        if (i % 2 == 0) {
+          tx.createNode(label("START")).createRelationshipTo(tx.createNode(label("END")), RelationshipType.withName("A"))
+        } else {
+          tx.createNode(label("START")).createRelationshipTo(tx.createNode(label("END")), RelationshipType.withName("B"))
+        }
+      }
+    }
+    // when
+    val logicalQuery = new LogicalQueryBuilder(this)
+      .produceResults("hasType")
+      .projection("r:A AS hasType")
+      .expandInto("(x)-[r]->(y)")
+      .cartesianProduct()
+      .|.nodeByLabelScan("y", "END")
+      .nodeByLabelScan("x", "START")
+      .build()
+
+    val runtimeResult = execute(logicalQuery, runtime)
+
+    // then
+    runtimeResult should beColumns("hasType").withRows(singleColumn((0 until size).map(_ % 2 == 0)))
+  }
+
+  test("hasType on top of optional expand all") {
+    // given
+    val size = 100
+    given {
+      for (i <- 0 until size) {
+        if (i % 3 == 0) {
+          tx.createNode(label("START")).createRelationshipTo(tx.createNode(), RelationshipType.withName("A"))
+        } else if (i % 3 == 1) {
+          tx.createNode(label("START")).createRelationshipTo(tx.createNode(), RelationshipType.withName("B"))
+        } else {
+          tx.createNode(label("START"))
+        }
+      }
+    }
+    // when
+    val logicalQuery = new LogicalQueryBuilder(this)
+      .produceResults("hasType")
+      .projection("r:A AS hasType")
+      .optionalExpandAll("(x)-[r]->(y)")
+      .nodeByLabelScan("x", "START")
+      .build()
+
+    val runtimeResult = execute(logicalQuery, runtime)
+
+    runtimeResult should beColumns("hasType").withRows(singleColumn((0 until size).map {
+      case i if i % 3 == 0 => true
+      case i if i % 3 == 1 => false
+      case i => null
+    }))
+  }
+
+  test("hasType on top of optional expand into") {
+    // given
+    val size = 100
+    given {
+      for (i <- 0 until size) {
+        if (i % 3 == 0) {
+          tx.createNode(label("START")).createRelationshipTo(tx.createNode(label("END")), RelationshipType.withName("A"))
+        } else if (i % 3 == 1) {
+          tx.createNode(label("START")).createRelationshipTo(tx.createNode(label("END")), RelationshipType.withName("B"))
+        } else {
+          tx.createNode(label("START"))
+          tx.createNode(label("END"))
+        }
+      }
+    }
+    // when
+    val logicalQuery = new LogicalQueryBuilder(this)
+      .produceResults("hasType")
+      .projection("r:A AS hasType")
+      .optionalExpandInto("(x)-[r]->(y)")
+      .cartesianProduct()
+      .|.nodeByLabelScan("y", "END")
+      .nodeByLabelScan("x", "START")
+      .build()
+
+    val runtimeResult = execute(logicalQuery, runtime)
+
+    runtimeResult should beColumns("hasType").withRows(singleColumn((0 until size*size).map {
+      case i if i >= size => null
+      case i if i % 3 == 0 => true
+      case i if i % 3 == 1 => false
+      case _ => null
+    }))
   }
 }

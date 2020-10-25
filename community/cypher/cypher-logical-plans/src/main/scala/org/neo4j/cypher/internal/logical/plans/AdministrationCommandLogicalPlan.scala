@@ -19,6 +19,8 @@
  */
 package org.neo4j.cypher.internal.logical.plans
 
+import java.util.UUID
+
 import org.neo4j.cypher.internal.ast.ActionResource
 import org.neo4j.cypher.internal.ast.AdminAction
 import org.neo4j.cypher.internal.ast.DatabaseScope
@@ -28,6 +30,7 @@ import org.neo4j.cypher.internal.ast.GraphScope
 import org.neo4j.cypher.internal.ast.PrivilegeQualifier
 import org.neo4j.cypher.internal.ast.Return
 import org.neo4j.cypher.internal.ast.ShowPrivilegeScope
+import org.neo4j.cypher.internal.ast.WaitUntilComplete
 import org.neo4j.cypher.internal.ast.Where
 import org.neo4j.cypher.internal.ast.Yield
 import org.neo4j.cypher.internal.expressions.Expression
@@ -63,6 +66,9 @@ abstract class SecurityAdministrationLogicalPlan(source: Option[AdministrationCo
 // Security administration commands
 case class ShowUsers(source: PrivilegePlan, override val returnColumns: List[String], yields: Option[Yield], returns: Option[Return])
                     (implicit idGen: IdGen) extends SecurityAdministrationLogicalPlan(Some(source))
+
+case class ShowCurrentUser(override val returnColumns: List[String], yields: Option[Yield], returns: Option[Return])
+                    (implicit idGen: IdGen) extends SecurityAdministrationLogicalPlan(None)
 
 case class CreateUser(source: SecurityAdministrationLogicalPlan, userName: Either[String, Parameter], isEncryptedPassword: Boolean, initialPassword: Expression,
                       requirePasswordChange: Boolean, suspended: Option[Boolean])(implicit idGen: IdGen) extends SecurityAdministrationLogicalPlan(Some(source))
@@ -118,6 +124,13 @@ case class ShowPrivileges(source: Option[PrivilegePlan],
                           yields: Option[Yield],
                           returns: Option[Return])(implicit idGen: IdGen) extends SecurityAdministrationLogicalPlan(source)
 
+case class ShowPrivilegeCommands(source: Option[PrivilegePlan],
+                                 scope: ShowPrivilegeScope,
+                                 asRevoke: Boolean,
+                                 override val returnColumns: List[String],
+                                 yields: Option[Yield],
+                                 returns: Option[Return])(implicit idGen: IdGen) extends SecurityAdministrationLogicalPlan(source)
+
 case class LogSystemCommand(source: AdministrationCommandLogicalPlan, command: String)(implicit idGen: IdGen) extends SecurityAdministrationLogicalPlan(Some(source))
 case class DoNothingIfNotExists(source: PrivilegePlan, label: String, name: Either[String, Parameter], valueMapper: String => String = s => s)(implicit idGen: IdGen) extends SecurityAdministrationLogicalPlan(Some(source))
 case class DoNothingIfExists(source: PrivilegePlan, label: String, name: Either[String, Parameter], valueMapper: String => String = s => s)(implicit idGen: IdGen) extends SecurityAdministrationLogicalPlan(Some(source))
@@ -136,3 +149,6 @@ case class StopDatabase(source: AdministrationCommandLogicalPlan, databaseName: 
 case class EnsureValidNonSystemDatabase(source: SecurityAdministrationLogicalPlan, databaseName: Either[String, Parameter], action: String)(implicit idGen: IdGen)
   extends DatabaseAdministrationLogicalPlan(Some(source))
 case class EnsureValidNumberOfDatabases(source: CreateDatabase)(implicit idGen: IdGen) extends DatabaseAdministrationLogicalPlan(Some(source))
+case class WaitForCompletion(source: AdministrationCommandLogicalPlan,
+                             databaseName: Either[String, Parameter],
+                             waitForCompletion: WaitUntilComplete)(implicit idGen: IdGen) extends DatabaseAdministrationLogicalPlan(Some(source))

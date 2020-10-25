@@ -17,6 +17,7 @@
 package org.neo4j.cypher.internal.frontend.phases
 
 import org.neo4j.cypher.internal.ast.AdministrationCommand
+import org.neo4j.cypher.internal.ast.SchemaCommand
 import org.neo4j.cypher.internal.ast.Statement
 import org.neo4j.cypher.internal.ast.UnaliasedReturnItem
 import org.neo4j.cypher.internal.ast.semantics.SemanticState
@@ -27,6 +28,7 @@ import org.neo4j.cypher.internal.rewriting.RewriterStepSequencer
 import org.neo4j.cypher.internal.rewriting.conditions.containsNoNodesOfType
 import org.neo4j.cypher.internal.rewriting.conditions.containsNoReturnAll
 import org.neo4j.cypher.internal.rewriting.conditions.noDuplicatesInReturnItems
+import org.neo4j.cypher.internal.rewriting.conditions.noHasLabelsOrTypes
 import org.neo4j.cypher.internal.rewriting.conditions.noReferenceEqualityAmongVariables
 import org.neo4j.cypher.internal.rewriting.conditions.noUnnamedPatternElementsInMatch
 import org.neo4j.cypher.internal.rewriting.conditions.noUnnamedPatternElementsInPatternComprehension
@@ -44,6 +46,7 @@ import org.neo4j.cypher.internal.rewriting.rewriters.namePatternElements
 import org.neo4j.cypher.internal.rewriting.rewriters.normalizeArgumentOrder
 import org.neo4j.cypher.internal.rewriting.rewriters.normalizeComparisons
 import org.neo4j.cypher.internal.rewriting.rewriters.normalizeExistsPatternExpressions
+import org.neo4j.cypher.internal.rewriting.rewriters.normalizeHasLabelsAndHasType
 import org.neo4j.cypher.internal.rewriting.rewriters.normalizeMatchPredicates
 import org.neo4j.cypher.internal.rewriting.rewriters.normalizeNotEquals
 import org.neo4j.cypher.internal.rewriting.rewriters.normalizeSargablePredicates
@@ -51,6 +54,7 @@ import org.neo4j.cypher.internal.rewriting.rewriters.parameterValueTypeReplaceme
 import org.neo4j.cypher.internal.rewriting.rewriters.replaceLiteralDynamicPropertyLookups
 import org.neo4j.cypher.internal.rewriting.rewriters.sensitiveLiteralReplacement
 import org.neo4j.cypher.internal.util.CypherExceptionFactory
+import org.neo4j.cypher.internal.util.Rewriter
 import org.neo4j.cypher.internal.util.symbols.CypherType
 
 class ASTRewriter(rewriterSequencer: String => RewriterStepSequencer,
@@ -64,6 +68,8 @@ class ASTRewriter(rewriterSequencer: String => RewriterStepSequencer,
 
     val contract = rewriterSequencer("ASTRewriter")(
       expandStar(semanticState),
+      normalizeHasLabelsAndHasType(semanticState),
+      enableCondition(noHasLabelsOrTypes),
       desugarMapProjection(semanticState),
       moveWithPastMatch,
       normalizeComparisons,
@@ -93,6 +99,7 @@ class ASTRewriter(rewriterSequencer: String => RewriterStepSequencer,
     val rewrittenStatementWithParameterTypes = rewrittenStatement.endoRewrite(replaceParameterValueTypes)
     val (extractParameters, extractedParameters) = statement match {
       case _ : AdministrationCommand => sensitiveLiteralReplacement(rewrittenStatementWithParameterTypes)
+      case _ : SchemaCommand => Rewriter.noop -> Map.empty[String, Any]
       case _ => literalReplacement(rewrittenStatementWithParameterTypes, literalExtraction)
     }
 

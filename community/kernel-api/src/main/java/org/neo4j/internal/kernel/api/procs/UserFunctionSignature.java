@@ -213,9 +213,4 @@ public final class UserFunctionSignature
     {
         return new Builder( namespace, name );
     }
-
-    public static QualifiedName procedureName( String... namespaceAndName )
-    {
-        return functionSignature( namespaceAndName ).build().name();
-    }
 }

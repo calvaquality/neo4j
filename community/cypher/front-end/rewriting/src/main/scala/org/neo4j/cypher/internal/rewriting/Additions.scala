@@ -17,7 +17,7 @@
 package org.neo4j.cypher.internal.rewriting
 
 import org.neo4j.cypher.internal.ast.AlterUser
-import org.neo4j.cypher.internal.ast.CreateIndexNewSyntax
+import org.neo4j.cypher.internal.ast.CreateIndex
 import org.neo4j.cypher.internal.ast.CreateNodeKeyConstraint
 import org.neo4j.cypher.internal.ast.CreateNodePropertyExistenceConstraint
 import org.neo4j.cypher.internal.ast.CreateRelationshipPropertyExistenceConstraint
@@ -29,11 +29,15 @@ import org.neo4j.cypher.internal.ast.DenyPrivilege
 import org.neo4j.cypher.internal.ast.DropConstraintOnName
 import org.neo4j.cypher.internal.ast.DropIndexOnName
 import org.neo4j.cypher.internal.ast.ExecuteAdminProcedureAction
+import org.neo4j.cypher.internal.ast.ExecuteBoostedFunctionAction
 import org.neo4j.cypher.internal.ast.ExecuteBoostedProcedureAction
+import org.neo4j.cypher.internal.ast.ExecuteFunctionAction
 import org.neo4j.cypher.internal.ast.ExecuteProcedureAction
 import org.neo4j.cypher.internal.ast.GrantPrivilege
 import org.neo4j.cypher.internal.ast.IfExistsDoNothing
 import org.neo4j.cypher.internal.ast.RevokePrivilege
+import org.neo4j.cypher.internal.ast.ShowCurrentUser
+import org.neo4j.cypher.internal.ast.ShowPrivilegeCommands
 import org.neo4j.cypher.internal.ast.ShowPrivileges
 import org.neo4j.cypher.internal.ast.ShowRolesPrivileges
 import org.neo4j.cypher.internal.ast.ShowUsersPrivileges
@@ -52,8 +56,8 @@ object Additions {
       case u: UseGraph =>
         throw cypherExceptionFactory.syntaxException("The USE clause is not supported in this Cypher version.", u.position)
 
-      // CREATE INDEX [name] FOR (n:Label) ON (n.prop)
-      case c: CreateIndexNewSyntax =>
+      // CREATE INDEX [name] [IF NOT EXISTS] FOR (n:Label) ON (n.prop)
+      case c: CreateIndex =>
         throw cypherExceptionFactory.syntaxException("Creating index using this syntax is not supported in this Cypher version.", c.position)
 
       // DROP INDEX name
@@ -61,35 +65,34 @@ object Additions {
         throw cypherExceptionFactory.syntaxException("Dropping index by name is not supported in this Cypher version.", d.position)
 
       // CREATE CONSTRAINT name ON ... IS NODE KEY
-      case c@CreateNodeKeyConstraint(_, _, _, Some(_), _, _) =>
+      case c@CreateNodeKeyConstraint(_, _, _, Some(_), _, _, _) =>
         throw cypherExceptionFactory.syntaxException("Creating named node key constraint is not supported in this Cypher version.", c.position)
 
-      // CREATE CONSTRAINT IF NOT EXISTS ON ... IS NODE KEY
-      case c@CreateNodeKeyConstraint(_, _, _, _, IfExistsDoNothing, _) =>
+      // CREATE CONSTRAINT [name] IF NOT EXISTS ON ... IS NODE KEY
+      case c@CreateNodeKeyConstraint(_, _, _, _, IfExistsDoNothing, _, _) =>
         throw cypherExceptionFactory.syntaxException("Creating node key constraint using `IF NOT EXISTS` is not supported in this Cypher version.", c.position)
 
       // CREATE CONSTRAINT name ON ... IS UNIQUE
-      case c@CreateUniquePropertyConstraint(_, _, _, Some(_),_, _) =>
+      case c@CreateUniquePropertyConstraint(_, _, _, Some(_),_, _, _) =>
         throw cypherExceptionFactory.syntaxException("Creating named uniqueness constraint is not supported in this Cypher version.", c.position)
 
-      // CREATE CONSTRAINT IF NOT EXISTS ON ... IS UNIQUE
-      case c@CreateUniquePropertyConstraint(_, _, _, _, IfExistsDoNothing, _) =>
+      // CREATE CONSTRAINT [name] IF NOT EXISTS ON ... IS UNIQUE
+      case c@CreateUniquePropertyConstraint(_, _, _, _, IfExistsDoNothing, _, _) =>
         throw cypherExceptionFactory.syntaxException("Creating uniqueness constraint using `IF NOT EXISTS` is not supported in this Cypher version.", c.position)
 
       // CREATE CONSTRAINT name ON () ... EXISTS
       case c@CreateNodePropertyExistenceConstraint(_, _, _, Some(_),_, _) =>
         throw cypherExceptionFactory.syntaxException("Creating named node existence constraint is not supported in this Cypher version.", c.position)
 
-      // CREATE CONSTRAINT IF NOT EXISTS ON () ... EXISTS
+      // CREATE CONSTRAINT [name] IF NOT EXISTS ON () ... EXISTS
       case c@CreateNodePropertyExistenceConstraint(_, _, _, _, IfExistsDoNothing, _) =>
         throw cypherExceptionFactory.syntaxException("Creating node existence constraint using `IF NOT EXISTS` is not supported in this Cypher version.", c.position)
-
 
       // CREATE CONSTRAINT name ON ()-[]-() ... EXISTS
       case c@CreateRelationshipPropertyExistenceConstraint(_, _, _, Some(_), _,_) =>
         throw cypherExceptionFactory.syntaxException("Creating named relationship existence constraint is not supported in this Cypher version.", c.position)
 
-      // CREATE CONSTRAINT IF NOT EXISTS ON ()-[]-() ... EXISTS
+      // CREATE CONSTRAINT [name] IF NOT EXISTS ON ()-[]-() ... EXISTS
       case c@CreateRelationshipPropertyExistenceConstraint(_, _, _, _, IfExistsDoNothing, _) =>
         throw cypherExceptionFactory.syntaxException("Creating relationship existence constraint using `IF NOT EXISTS` is not supported in this Cypher version.", c.position)
 
@@ -109,6 +112,9 @@ object Additions {
 
     override def check(statement: Statement, cypherExceptionFactory: CypherExceptionFactory): Unit = statement.treeExists {
 
+      case s@ShowPrivilegeCommands(_, _, _, _) =>
+        throw cypherExceptionFactory.syntaxException("SHOW PRIVILEGES AS COMMANDS command is not supported in this Cypher version.", s.position)
+
       case c@CreateUser(_, true, _, _, _, _) =>
         throw cypherExceptionFactory.syntaxException("Creating a user with an encrypted password is not supported in this Cypher version.", c.position)
 
@@ -116,11 +122,11 @@ object Additions {
         throw cypherExceptionFactory.syntaxException("Updating a user with an encrypted password is not supported in this Cypher version.", c.position)
 
       // SHOW ROLE role1, role2 PRIVILEGES
-      case s@ShowPrivileges(ShowRolesPrivileges(r), _,_) if r.size > 1 =>
+      case s@ShowPrivileges(ShowRolesPrivileges(r), _, _) if r.size > 1 =>
         throw cypherExceptionFactory.syntaxException("Multiple roles in SHOW ROLE PRIVILEGE command is not supported in this Cypher version.", s.position)
 
       // SHOW USER user1, user2 PRIVILEGES
-      case s@ShowPrivileges(ShowUsersPrivileges(u), _,_) if u.size > 1 =>
+      case s@ShowPrivileges(ShowUsersPrivileges(u), _, _) if u.size > 1 =>
         throw cypherExceptionFactory.syntaxException("Multiple users in SHOW USER PRIVILEGE command is not supported in this Cypher version.", s.position)
 
       case d: DefaultGraphScope => throw cypherExceptionFactory.syntaxException("Default graph is not supported in this Cypher version.", d.position)
@@ -148,6 +154,39 @@ object Additions {
         throw cypherExceptionFactory.syntaxException("EXECUTE BOOSTED PROCEDURE is not supported in this Cypher version.", p.position)
       case p@RevokePrivilege(DbmsPrivilege(ExecuteAdminProcedureAction), _, _, _, _, _) =>
         throw cypherExceptionFactory.syntaxException("EXECUTE ADMIN PROCEDURES is not supported in this Cypher version.", p.position)
+
+      // GRANT EXECUTE [BOOSTED] [USER [DEFINED]] FUNCTION ...
+      case p@GrantPrivilege(DbmsPrivilege(ExecuteFunctionAction), _, _, _, _) =>
+        throw cypherExceptionFactory.syntaxException("EXECUTE FUNCTION is not supported in this Cypher version.", p.position)
+      case p@GrantPrivilege(DbmsPrivilege(ExecuteBoostedFunctionAction), _, _, _, _) =>
+        throw cypherExceptionFactory.syntaxException("EXECUTE BOOSTED FUNCTION is not supported in this Cypher version.", p.position)
+
+      // DENY EXECUTE [BOOSTED] [USER [DEFINED]] FUNCTION ...
+      case p@DenyPrivilege(DbmsPrivilege(ExecuteFunctionAction), _, _, _, _) =>
+        throw cypherExceptionFactory.syntaxException("EXECUTE FUNCTION is not supported in this Cypher version.", p.position)
+      case p@DenyPrivilege(DbmsPrivilege(ExecuteBoostedFunctionAction), _, _, _, _) =>
+        throw cypherExceptionFactory.syntaxException("EXECUTE BOOSTED FUNCTION is not supported in this Cypher version.", p.position)
+
+      // REVOKE EXECUTE [BOOSTED] [USER [DEFINED]] FUNCTION ...
+      case p@RevokePrivilege(DbmsPrivilege(ExecuteFunctionAction), _, _, _, _, _) =>
+        throw cypherExceptionFactory.syntaxException("EXECUTE FUNCTION is not supported in this Cypher version.", p.position)
+      case p@RevokePrivilege(DbmsPrivilege(ExecuteBoostedFunctionAction), _, _, _, _, _) =>
+        throw cypherExceptionFactory.syntaxException("EXECUTE BOOSTED FUNCTION is not supported in this Cypher version.", p.position)
+
+      // CREATE INDEX ... OPTIONS {...}
+      case c@CreateIndex(_, _, _, _, _, options, _) if options.nonEmpty =>
+        throw cypherExceptionFactory.syntaxException("Creating index with options is not supported in this Cypher version.", c.position)
+
+      // CREATE CONSTRAINT ... IS NODE KEY OPTIONS {...}
+      case c@CreateNodeKeyConstraint(_, _, _, _, _, options, _) if options.nonEmpty =>
+        throw cypherExceptionFactory.syntaxException("Creating node key constraint with options is not supported in this Cypher version.", c.position)
+
+      // CREATE CONSTRAINT ... IS UNIQUE OPTIONS {...}
+      case c@CreateUniquePropertyConstraint(_, _, _, _, _, options, _) if options.nonEmpty =>
+        throw cypherExceptionFactory.syntaxException("Creating uniqueness constraint with options is not supported in this Cypher version.", c.position)
+
+      // SHOW CURRENT USER
+      case s: ShowCurrentUser => throw cypherExceptionFactory.syntaxException("SHOW CURRENT USER is not supported in this Cypher version.", s.position)
     }
   }
 }

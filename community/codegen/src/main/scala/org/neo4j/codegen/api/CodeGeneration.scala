@@ -19,6 +19,9 @@
  */
 package org.neo4j.codegen.api
 
+import java.nio.file.Path
+import java.nio.file.Paths
+
 import org.neo4j.codegen
 import org.neo4j.codegen.ClassHandle
 import org.neo4j.codegen.CodeGenerationNotSupportedException
@@ -43,6 +46,7 @@ import org.neo4j.codegen.bytecode.ByteCode.PRINT_BYTECODE
 import org.neo4j.codegen.source.SourceCode.PRINT_SOURCE
 import org.neo4j.codegen.source.SourceCode.SOURCECODE
 import org.neo4j.codegen.source.SourceVisitor
+import org.neo4j.codegen.source.SourceCode.sourceLocation
 
 import scala.collection.mutable.ArrayBuffer
 
@@ -55,6 +59,9 @@ object CodeGeneration {
   private val DEBUG_PRINT_SOURCE = false
   private val DEBUG_PRINT_BYTECODE = false
 
+  final val GENERATE_JAVA_SOURCE_DEBUG_OPTION = "generate_java_source"
+  final val GENERATED_SOURCE_LOCATION_PROPERTY = "org.neo4j.cypher.DEBUG.generated_source_location"
+
   sealed trait CodeGenerationMode {
     def saver: CodeSaver
   }
@@ -63,8 +70,9 @@ object CodeGeneration {
 
   object CodeGenerationMode {
     def fromDebugOptions(debugOptions: Set[String]): CodeGenerationMode = {
-      if(debugOptions.contains("generate_java_source")) {
-        val saver = new CodeSaver(debugOptions.contains("show_java_source"), debugOptions.contains("show_bytecode"))
+      if(debugOptions.contains(GENERATE_JAVA_SOURCE_DEBUG_OPTION)) {
+        val saveSourceToFileLocation = Option(System.getProperty(GENERATED_SOURCE_LOCATION_PROPERTY)).map(Paths.get(_))
+        val saver = new CodeSaver(debugOptions.contains("show_java_source"), debugOptions.contains("show_bytecode"), saveSourceToFileLocation)
         SourceCodeGeneration(saver)
       } else {
         val saver = new CodeSaver(false, debugOptions.contains("show_bytecode"))
@@ -73,7 +81,7 @@ object CodeGeneration {
     }
   }
 
-  class CodeSaver(saveSource: Boolean, saveByteCode: Boolean) {
+  class CodeSaver(saveSource: Boolean, saveByteCode: Boolean, saveSourceToFileLocation: Option[Path] = None) {
     private val _source: ArrayBuffer[(String, String)] = new ArrayBuffer()
     private val _bytecode: ArrayBuffer[(String, String)] = new ArrayBuffer()
 
@@ -86,7 +94,8 @@ object CodeGeneration {
     def options: List[CodeGeneratorOption] = {
       var l: List[CodeGeneratorOption] = Nil
       if (saveSource) l ::= sourceVisitor
-      if (saveByteCode) l::= byteCodeVisitor
+      if (saveByteCode) l ::= byteCodeVisitor
+      saveSourceToFileLocation.foreach(path => l ::= sourceLocation(path))
       l
     }
 

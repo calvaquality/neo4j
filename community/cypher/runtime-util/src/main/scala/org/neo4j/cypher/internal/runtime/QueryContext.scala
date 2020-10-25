@@ -44,6 +44,7 @@ import org.neo4j.internal.kernel.api.TokenRead
 import org.neo4j.internal.kernel.api.Write
 import org.neo4j.internal.kernel.api.procs.ProcedureCallContext
 import org.neo4j.internal.schema.ConstraintDescriptor
+import org.neo4j.internal.schema.IndexConfig
 import org.neo4j.internal.schema.IndexDescriptor
 import org.neo4j.kernel.api.KernelTransaction
 import org.neo4j.kernel.database.NamedDatabaseId
@@ -115,7 +116,7 @@ trait QueryContext extends TokenContext with DbAccess {
 
   def getOrCreatePropertyKeyIds(propertyKeys: Array[String]): Array[Int]
 
-  def addIndexRule(labelId: Int, propertyKeyIds: Seq[Int], name: Option[String]): IndexDescriptor
+  def addIndexRule(labelId: Int, propertyKeyIds: Seq[Int], name: Option[String], provider: Option[String], indexConfig: IndexConfig): IndexDescriptor
 
   def dropIndexRule(labelId: Int, propertyKeyIds: Seq[Int]): Unit
 
@@ -155,12 +156,12 @@ trait QueryContext extends TokenContext with DbAccess {
   def getNodesByLabelPrimitive(id: Int, indexOrder: IndexOrder): ClosingLongIterator
 
   /* return true if the constraint was created, false if preexisting, throws if failed */
-  def createNodeKeyConstraint(labelId: Int, propertyKeyIds: Seq[Int], name: Option[String]): Unit
+  def createNodeKeyConstraint(labelId: Int, propertyKeyIds: Seq[Int], name: Option[String], provider: Option[String], indexConfig: IndexConfig): Unit
 
   def dropNodeKeyConstraint(labelId: Int, propertyKeyIds: Seq[Int]): Unit
 
   /* return true if the constraint was created, false if preexisting, throws if failed */
-  def createUniqueConstraint(labelId: Int, propertyKeyIds: Seq[Int], name: Option[String]): Unit
+  def createUniqueConstraint(labelId: Int, propertyKeyIds: Seq[Int], name: Option[String], provider: Option[String], indexConfig: IndexConfig): Unit
 
   def dropUniqueConstraint(labelId: Int, propertyKeyIds: Seq[Int]): Unit
 
@@ -180,6 +181,17 @@ trait QueryContext extends TokenContext with DbAccess {
 
   def getImportURL(url: URL): Either[String,URL]
 
+  def nodeGetDegreeWithMax(maxDegree:Int, node: Long, dir: SemanticDirection, nodeCursor: NodeCursor): Int = dir match {
+    case SemanticDirection.OUTGOING => nodeGetOutgoingDegreeWithMax(maxDegree, node, nodeCursor)
+    case SemanticDirection.INCOMING => nodeGetIncomingDegreeWithMax(maxDegree, node, nodeCursor)
+    case SemanticDirection.BOTH => nodeGetTotalDegreeWithMax(maxDegree, node, nodeCursor)
+  }
+
+  def nodeGetDegreeWithMax(maxDegree: Int, node: Long, dir: SemanticDirection, relTypeId: Int, nodeCursor: NodeCursor): Int = dir match {
+    case SemanticDirection.OUTGOING => nodeGetOutgoingDegreeWithMax(maxDegree, node, relTypeId, nodeCursor)
+    case SemanticDirection.INCOMING => nodeGetIncomingDegreeWithMax(maxDegree, node, relTypeId, nodeCursor)
+    case SemanticDirection.BOTH => nodeGetTotalDegreeWithMax(maxDegree, node, relTypeId, nodeCursor)
+  }
   def nodeGetDegree(node: Long, dir: SemanticDirection, nodeCursor: NodeCursor): Int = dir match {
     case SemanticDirection.OUTGOING => nodeGetOutgoingDegree(node, nodeCursor)
     case SemanticDirection.INCOMING => nodeGetIncomingDegree(node, nodeCursor)

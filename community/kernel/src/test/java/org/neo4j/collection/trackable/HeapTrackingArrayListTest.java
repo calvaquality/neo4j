@@ -308,7 +308,7 @@ class HeapTrackingArrayListTest
     @Test
     void size()
     {
-        assertEquals( 100, aList.size(), "Returned incorrect size for exiting list" );
+        assertEquals( 100, aList.size(), "Returned incorrect size for existing list" );
         try ( HeapTrackingArrayList<Object> list = HeapTrackingArrayList.newArrayList( memoryTracker ) )
         {
             assertEquals( 0, list.size(), "Returned incorrect size for new list" );

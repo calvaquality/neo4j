@@ -57,7 +57,7 @@ public final class HeapTrackingCollections
         return HeapTrackingUnifiedMap.createUnifiedMap( memoryTracker );
     }
 
-    public static <T> MutableSet<T> newSet( MemoryTracker memoryTracker )
+    public static <T> HeapTrackingUnifiedSet<T> newSet( MemoryTracker memoryTracker )
     {
         return HeapTrackingUnifiedSet.createUnifiedSet( memoryTracker );
     }
@@ -70,5 +70,15 @@ public final class HeapTrackingCollections
     public static <T> HeapTrackingArrayList<T> newArrayList( MemoryTracker memoryTracker )
     {
         return HeapTrackingArrayList.newArrayList( memoryTracker );
+    }
+
+    public static HeapTrackingLongStack newLongStack( MemoryTracker memoryTracker )
+    {
+        return new HeapTrackingLongStack( HeapTrackingLongArrayList.newLongArrayList( memoryTracker ) );
+    }
+
+    public static <T> HeapTrackingStack<T> newStack( MemoryTracker memoryTracker )
+    {
+        return new HeapTrackingStack<>( HeapTrackingArrayList.newArrayList( memoryTracker ) );
     }
 }

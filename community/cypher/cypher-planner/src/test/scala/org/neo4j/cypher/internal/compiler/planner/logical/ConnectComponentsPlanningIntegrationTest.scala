@@ -31,6 +31,7 @@ import org.neo4j.cypher.internal.logical.plans.CacheProperties
 import org.neo4j.cypher.internal.logical.plans.CartesianProduct
 import org.neo4j.cypher.internal.logical.plans.IndexOrderNone
 import org.neo4j.cypher.internal.logical.plans.LogicalPlan
+import org.neo4j.cypher.internal.logical.plans.LogicalPlanToPlanBuilderString
 import org.neo4j.cypher.internal.logical.plans.NodeByLabelScan
 import org.neo4j.cypher.internal.logical.plans.NodeIndexScan
 import org.neo4j.cypher.internal.logical.plans.NodeIndexSeek
@@ -283,4 +284,69 @@ class ConnectComponentsPlanningIntegrationTest extends CypherFunSuite with Logic
       `equals1`) => ()
     }
   }
+
+  test("optional match that requires 2 components to be connected should be solved before other components are connected") {
+    val selectivities = Map[Expression, Double](
+      hasLabels("n", "N") -> 0.4,
+      hasLabels("m", "M") -> 0.5,
+      hasLabels("o", "O") -> 0.9,
+    ).withDefaultValue(1.0)
+
+    val plan = new given {
+      cardinality = selectivitiesCardinality(selectivities, qg => Math.pow(100.0, qg.connectedComponents.size))
+    }.getLogicalPlanFor(
+      """
+        |MATCH (n:N), (m:M), (o:O)
+        |OPTIONAL MATCH (n)-[r1]-(m)-[r2]-(x)
+        |RETURN n
+        |""".stripMargin, stripProduceResults = false)._2
+
+    plan should equal(
+      new LogicalPlanBuilder()
+        .produceResults("n")
+        .cartesianProduct()
+        .|.nodeByLabelScan("o", "O", IndexOrderNone)
+        .apply()
+        .|.optional("n", "m")
+        .|.filter("not r1 = r2")
+        .|.expandInto("(n)-[r1]-(m)")
+        .|.expandAll("(m)-[r2]-(x)")
+        .|.argument("n", "m")
+        .cartesianProduct()
+        .|.nodeByLabelScan("m", "M", IndexOrderNone)
+        .nodeByLabelScan("n", "N", IndexOrderNone)
+        .build()
+    )
+  }
+
+
+  test("shortest path should not fail to get planned after nested index join") {
+    val selectivities = Map[Expression, Double](
+      hasLabels("n", "N") -> 0.2,
+      hasLabels("m", "N") -> 0.2,
+    ).withDefaultValue(1.0)
+
+    val plan = new given {
+      cardinality = selectivitiesCardinality(selectivities, qg => Math.pow(100.0, qg.connectedComponents.size))
+      indexOn("N", "loc")
+    }.getLogicalPlanFor(
+      """MATCH (n:N), (m:M)
+        |WHERE n.loc = m.loc
+        |WITH n, m
+        |MATCH p=shortestPath((n)-[r:R *]-(m))
+        |RETURN n, m
+        |""".stripMargin, stripProduceResults = false)._2
+
+    plan shouldEqual (
+      new LogicalPlanBuilder()
+        .produceResults("n", "m")
+        .shortestPath("(n)-[r:R*1..]-(m)", pathName = Some("p"))
+        .apply()
+        .|.nodeIndexOperator("n:N(loc = ???)", paramExpr = Some(prop("m", "loc")), argumentIds = Set("m"))
+        .nodeByLabelScan("m", "M")
+        .build()
+    )
+  }
+
+
 }

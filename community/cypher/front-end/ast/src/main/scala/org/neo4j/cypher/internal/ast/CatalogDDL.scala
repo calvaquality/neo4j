@@ -28,6 +28,7 @@ import org.neo4j.cypher.internal.ast.semantics.SemanticFeature
 import org.neo4j.cypher.internal.ast.semantics.SemanticState
 import org.neo4j.cypher.internal.expressions.ExistsSubClause
 import org.neo4j.cypher.internal.expressions.Expression
+import org.neo4j.cypher.internal.expressions.FunctionName
 import org.neo4j.cypher.internal.expressions.LogicalVariable
 import org.neo4j.cypher.internal.expressions.Namespace
 import org.neo4j.cypher.internal.expressions.Parameter
@@ -154,6 +155,19 @@ object ShowUsers {
       ShowColumn(Variable("passwordChangeRequired")(position), CTBoolean, "passwordChangeRequired"), ShowColumn(Variable("suspended")(position), CTBoolean,"suspended")))(position)
 }
 
+final case class ShowCurrentUser(override val yieldOrWhere: YieldOrWhere, override val defaultColumnSet: List[ShowColumn])(val position: InputPosition) extends ReadAdministrationCommand {
+
+  override def name: String = "SHOW CURRENT USER"
+
+  override def semanticCheck: SemanticCheck =
+    super.semanticCheck
+}
+
+object ShowCurrentUser {
+  def apply(yieldOrWhere: YieldOrWhere)(position: InputPosition): ShowCurrentUser =
+    ShowCurrentUser(yieldOrWhere, List(ShowColumn(Variable("user")(position), CTString, "user"), ShowColumn(Variable("roles")(position), CTList(CTString), "roles"),
+      ShowColumn(Variable("passwordChangeRequired")(position), CTBoolean, "passwordChangeRequired"), ShowColumn(Variable("suspended")(position), CTBoolean,"suspended")))(position)
+}
 
 trait EitherAsString {
   def eitherAsString(either: Either[String, Parameter]): String = either match {
@@ -328,7 +342,9 @@ sealed trait PrivilegeQualifier extends Rewritable {
   override def dup(children: Seq[AnyRef]): PrivilegeQualifier.this.type = this
 }
 
-sealed trait ProcedurePrivilegeQualifier extends PrivilegeQualifier {
+sealed trait ExecutePrivilegeQualifier extends PrivilegeQualifier
+
+sealed trait ProcedurePrivilegeQualifier extends ExecutePrivilegeQualifier {
   override def dup(children: Seq[AnyRef]): ProcedurePrivilegeQualifier.this.type = this
 }
 
@@ -340,6 +356,19 @@ final case class ProcedureQualifier(nameSpace: Namespace, procedureName: Procedu
 }
 
 final case class ProcedureAllQualifier()(val position: InputPosition) extends ProcedurePrivilegeQualifier
+
+sealed trait FunctionPrivilegeQualifier extends ExecutePrivilegeQualifier {
+  override def dup(children: Seq[AnyRef]): FunctionPrivilegeQualifier.this.type = this
+}
+
+final case class FunctionQualifier(nameSpace: Namespace, functionName: FunctionName)(val position: InputPosition) extends FunctionPrivilegeQualifier {
+  override def simplify: Seq[FunctionPrivilegeQualifier] = (nameSpace, functionName) match {
+    case (Namespace(Nil), FunctionName("*")) => Seq(FunctionAllQualifier()(position))
+    case _ => Seq(this)
+  }
+}
+
+final case class FunctionAllQualifier()(val position: InputPosition) extends FunctionPrivilegeQualifier
 
 sealed trait GraphPrivilegeQualifier extends PrivilegeQualifier {
   override def dup(children: Seq[AnyRef]): GraphPrivilegeQualifier.this.type = this
@@ -490,6 +519,10 @@ case object ExecuteProcedureAction extends DbmsAction("EXECUTE PROCEDURE")
 case object ExecuteBoostedProcedureAction extends DbmsAction("EXECUTE BOOSTED PROCEDURE")
 
 case object ExecuteAdminProcedureAction extends DbmsAction("EXECUTE ADMIN PROCEDURES")
+
+case object ExecuteFunctionAction extends DbmsAction("EXECUTE USER DEFINED FUNCTION")
+
+case object ExecuteBoostedFunctionAction extends DbmsAction("EXECUTE BOOSTED USER DEFINED FUNCTION")
 
 abstract class UserManagementAction(override val name: String) extends DbmsAction(name)
 
@@ -688,7 +721,9 @@ final case class RevokePrivilege(privilege: PrivilegeType,
 
 }
 
-final case class ShowPrivileges(scope: ShowPrivilegeScope, override val yieldOrWhere: YieldOrWhere, override val defaultColumnSet: List[ShowColumn])(val position: InputPosition) extends ReadAdministrationCommand {
+final case class ShowPrivileges(scope: ShowPrivilegeScope,
+                                override val yieldOrWhere: YieldOrWhere,
+                                override val defaultColumnSet: List[ShowColumn])(val position: InputPosition) extends ReadAdministrationCommand {
   override def name = "SHOW PRIVILEGE"
 
   override def semanticCheck: SemanticCheck =
@@ -707,6 +742,23 @@ object ShowPrivileges{
   }
 }
 
+final case class ShowPrivilegeCommands(scope: ShowPrivilegeScope,
+                                       asRevoke: Boolean,
+                                       override val yieldOrWhere: YieldOrWhere,
+                                       override val defaultColumnSet: List[ShowColumn])(val position: InputPosition) extends ReadAdministrationCommand {
+  override def name = "SHOW PRIVILEGE COMMANDS"
+
+  override def semanticCheck: SemanticCheck =
+    super.semanticCheck chain
+      SemanticState.recordCurrentScope(this)
+}
+
+object ShowPrivilegeCommands{
+  def apply(scope: ShowPrivilegeScope, asRevoke: Boolean, yieldOrWhere: YieldOrWhere)(position:InputPosition): ShowPrivilegeCommands = {
+    val columns = List(ShowColumn("command")(position))
+    ShowPrivilegeCommands(scope, asRevoke, yieldOrWhere, columns)(position)
+  }
+}
 
 final case class ShowDatabase(scope: DatabaseScope, override val yieldOrWhere: YieldOrWhere, override val defaultColumnSet: List[ShowColumn])(val position: InputPosition) extends ReadAdministrationCommand {
 
@@ -726,14 +778,23 @@ object ShowDatabase{
     val columns = List(
       ShowColumn("name")(position), ShowColumn("address")(position), ShowColumn("role")(position), ShowColumn("requestedStatus")(position),
       ShowColumn("currentStatus")(position), ShowColumn("error")(position)) ++ (scope match {
-          case _: DefaultDatabaseScope => List.empty
-          case _ => List(ShowColumn(Variable("default")(position), CTBoolean, "default"))})
+      case _: DefaultDatabaseScope => List.empty
+      case _ => List(ShowColumn(Variable("default")(position), CTBoolean, "default"))})
     ShowDatabase(scope, yieldOrWhere, columns)(position)
   }
 }
 
+sealed trait WaitableAdministrationCommand extends WriteAdministrationCommand {
+  val waitUntilComplete: WaitUntilComplete
 
-final case class CreateDatabase(dbName: Either[String, Parameter], ifExistsDo: IfExistsDo)(val position: InputPosition) extends WriteAdministrationCommand {
+  override def returnColumns: List[LogicalVariable] = waitUntilComplete match {
+    case NoWait => List.empty
+    case _ => List("address","state", "message", "success").map(Variable(_)(position))
+  }
+}
+
+final case class CreateDatabase(dbName: Either[String, Parameter], ifExistsDo: IfExistsDo, waitUntilComplete: WaitUntilComplete)(val position: InputPosition)
+  extends WaitableAdministrationCommand {
 
   override def name: String = ifExistsDo match {
     case IfExistsReplace | IfExistsInvalidSyntax => "CREATE OR REPLACE DATABASE"
@@ -758,8 +819,9 @@ case object DestroyData extends DropDatabaseAdditionalAction("DESTROY DATA")
 
 final case class DropDatabase(dbName: Either[String, Parameter],
                               ifExists: Boolean,
-                              additionalAction: DropDatabaseAdditionalAction)
-                             (val position: InputPosition) extends WriteAdministrationCommand {
+                              additionalAction: DropDatabaseAdditionalAction,
+                              waitUntilComplete: WaitUntilComplete)
+                             (val position: InputPosition) extends WaitableAdministrationCommand {
 
   override def name = "DROP DATABASE"
 
@@ -768,7 +830,7 @@ final case class DropDatabase(dbName: Either[String, Parameter],
       SemanticState.recordCurrentScope(this)
 }
 
-final case class StartDatabase(dbName: Either[String, Parameter])(val position: InputPosition) extends WriteAdministrationCommand {
+final case class StartDatabase(dbName: Either[String, Parameter], waitUntilComplete: WaitUntilComplete)(val position: InputPosition) extends WaitableAdministrationCommand {
 
   override def name = "START DATABASE"
 
@@ -777,7 +839,7 @@ final case class StartDatabase(dbName: Either[String, Parameter])(val position: 
       SemanticState.recordCurrentScope(this)
 }
 
-final case class StopDatabase(dbName: Either[String, Parameter])(val position: InputPosition) extends WriteAdministrationCommand {
+final case class StopDatabase(dbName: Either[String, Parameter], waitUntilComplete: WaitUntilComplete)(val position: InputPosition) extends WaitableAdministrationCommand {
 
   override def name = "STOP DATABASE"
 
@@ -845,4 +907,21 @@ final case class DropView(graphName: CatalogName)(val position: InputPosition) e
   override def semanticCheck: SemanticCheck =
     super.semanticCheck chain
       SemanticState.recordCurrentScope(this)
+}
+
+sealed trait WaitUntilComplete {
+  val DEFAULT_TIMEOUT = 300L
+  val name: String
+  def timeout: Long = DEFAULT_TIMEOUT
+}
+
+case object NoWait extends WaitUntilComplete {
+  override val name: String = ""
+}
+case object IndefiniteWait extends WaitUntilComplete {
+  override val name: String = " WAIT"
+}
+case class TimeoutAfter(timoutSeconds: Long) extends WaitUntilComplete {
+  override val name: String = s" WAIT $timoutSeconds SECONDS"
+  override def timeout: Long = timoutSeconds
 }

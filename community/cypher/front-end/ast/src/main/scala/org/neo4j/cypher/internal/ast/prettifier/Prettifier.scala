@@ -34,7 +34,7 @@ import org.neo4j.cypher.internal.ast.Create
 import org.neo4j.cypher.internal.ast.CreateDatabase
 import org.neo4j.cypher.internal.ast.CreateGraph
 import org.neo4j.cypher.internal.ast.CreateIndex
-import org.neo4j.cypher.internal.ast.CreateIndexNewSyntax
+import org.neo4j.cypher.internal.ast.CreateIndexOldSyntax
 import org.neo4j.cypher.internal.ast.CreateNodeKeyConstraint
 import org.neo4j.cypher.internal.ast.CreateNodePropertyExistenceConstraint
 import org.neo4j.cypher.internal.ast.CreateRelationshipPropertyExistenceConstraint
@@ -66,8 +66,11 @@ import org.neo4j.cypher.internal.ast.DropView
 import org.neo4j.cypher.internal.ast.DumpData
 import org.neo4j.cypher.internal.ast.ElementQualifier
 import org.neo4j.cypher.internal.ast.ElementsAllQualifier
+import org.neo4j.cypher.internal.ast.ExecutePrivilegeQualifier
 import org.neo4j.cypher.internal.ast.Foreach
 import org.neo4j.cypher.internal.ast.FromGraph
+import org.neo4j.cypher.internal.ast.FunctionAllQualifier
+import org.neo4j.cypher.internal.ast.FunctionQualifier
 import org.neo4j.cypher.internal.ast.GrantPrivilege
 import org.neo4j.cypher.internal.ast.GrantRolesToUsers
 import org.neo4j.cypher.internal.ast.GraphPrivilege
@@ -96,7 +99,6 @@ import org.neo4j.cypher.internal.ast.OnMatch
 import org.neo4j.cypher.internal.ast.OrderBy
 import org.neo4j.cypher.internal.ast.PrivilegeQualifier
 import org.neo4j.cypher.internal.ast.ProcedureAllQualifier
-import org.neo4j.cypher.internal.ast.ProcedurePrivilegeQualifier
 import org.neo4j.cypher.internal.ast.ProcedureQualifier
 import org.neo4j.cypher.internal.ast.ProcedureResult
 import org.neo4j.cypher.internal.ast.ProcedureResultItem
@@ -127,7 +129,9 @@ import org.neo4j.cypher.internal.ast.SetLabelItem
 import org.neo4j.cypher.internal.ast.SetOwnPassword
 import org.neo4j.cypher.internal.ast.SetPropertyItem
 import org.neo4j.cypher.internal.ast.ShowAllPrivileges
+import org.neo4j.cypher.internal.ast.ShowCurrentUser
 import org.neo4j.cypher.internal.ast.ShowDatabase
+import org.neo4j.cypher.internal.ast.ShowPrivilegeCommands
 import org.neo4j.cypher.internal.ast.ShowPrivilegeScope
 import org.neo4j.cypher.internal.ast.ShowPrivileges
 import org.neo4j.cypher.internal.ast.ShowRoles
@@ -162,8 +166,10 @@ import org.neo4j.cypher.internal.ast.WriteAction
 import org.neo4j.cypher.internal.ast.Yield
 import org.neo4j.cypher.internal.ast.YieldOrWhere
 import org.neo4j.cypher.internal.expressions.CoerceTo
+import org.neo4j.cypher.internal.expressions.Expression
 import org.neo4j.cypher.internal.expressions.ImplicitProcedureArgument
 import org.neo4j.cypher.internal.expressions.LabelName
+import org.neo4j.cypher.internal.expressions.Namespace
 import org.neo4j.cypher.internal.expressions.Parameter
 import org.neo4j.cypher.internal.expressions.ParameterWithOldSyntax
 import org.neo4j.cypher.internal.expressions.Property
@@ -202,16 +208,18 @@ case class Prettifier(
         case IfExistsThrowError    => s"CREATE $schemaType $nameString"
       }
     }
+    def optionsToString(options: Map[String, Expression]) =
+      if (options.nonEmpty) s" OPTIONS ${options.map({ case (s, e) => s"${backtick(s)}: ${expr(e)}" }).mkString("{", ", ", "}")}" else ""
 
     val useString = asString(command.useGraph)
     val commandString = command match {
 
-      case CreateIndex(LabelName(label), properties, _) =>
+      case CreateIndexOldSyntax(LabelName(label), properties, _) =>
         s"CREATE INDEX ON :${backtick(label)}${properties.map(p => backtick(p.name)).mkString("(", ", ", ")")}"
 
-      case CreateIndexNewSyntax(Variable(variable), LabelName(label), properties, name, ifExistsDo, _) =>
+      case CreateIndex(Variable(variable), LabelName(label), properties, name, ifExistsDo, options, _) =>
         val startOfCommand = getStartOfCommand(name, ifExistsDo, "INDEX")
-        s"${startOfCommand}FOR (${backtick(variable)}:${backtick(label)}) ON ${propertiesToString(properties)}"
+        s"${startOfCommand}FOR (${backtick(variable)}:${backtick(label)}) ON ${propertiesToString(properties)}${optionsToString(options)}"
 
       case DropIndex(LabelName(label), properties, _) =>
         s"DROP INDEX ON :${backtick(label)}${properties.map(p => backtick(p.name)).mkString("(", ", ", ")")}"
@@ -220,16 +228,16 @@ case class Prettifier(
         val ifExistsString = if (ifExists) " IF EXISTS" else ""
         s"DROP INDEX ${backtick(name)}$ifExistsString"
 
-      case CreateNodeKeyConstraint(Variable(variable), LabelName(label), properties, name, ifExistsDo, _) =>
+      case CreateNodeKeyConstraint(Variable(variable), LabelName(label), properties, name, ifExistsDo, options, _) =>
         val startOfCommand = getStartOfCommand(name, ifExistsDo, "CONSTRAINT")
-        s"${startOfCommand}ON (${backtick(variable)}:${backtick(label)}) ASSERT ${propertiesToString(properties)} IS NODE KEY"
+        s"${startOfCommand}ON (${backtick(variable)}:${backtick(label)}) ASSERT ${propertiesToString(properties)} IS NODE KEY${optionsToString(options)}"
 
       case DropNodeKeyConstraint(Variable(variable), LabelName(label), properties, _) =>
         s"DROP CONSTRAINT ON (${backtick(variable)}:${backtick(label)}) ASSERT ${propertiesToString(properties)} IS NODE KEY"
 
-      case CreateUniquePropertyConstraint(Variable(variable), LabelName(label), properties, name, ifExistsDo, _) =>
+      case CreateUniquePropertyConstraint(Variable(variable), LabelName(label), properties, name, ifExistsDo, options, _) =>
         val startOfCommand = getStartOfCommand(name, ifExistsDo, "CONSTRAINT")
-        s"${startOfCommand}ON (${backtick(variable)}:${backtick(label)}) ASSERT ${propertiesToString(properties)} IS UNIQUE"
+        s"${startOfCommand}ON (${backtick(variable)}:${backtick(label)}) ASSERT ${propertiesToString(properties)} IS UNIQUE${optionsToString(options)}"
 
       case DropUniquePropertyConstraint(Variable(variable), LabelName(label), properties, _) =>
         s"DROP CONSTRAINT ON (${backtick(variable)}:${backtick(label)}) ASSERT ${propertiesToString(properties)} IS UNIQUE"
@@ -271,6 +279,10 @@ case class Prettifier(
     val commandString = adminCommand match {
 
       case x @ ShowUsers(yields,_) =>
+        val (y: String, r: String) = showClausesAsString(yields)
+        s"${x.name}$y$r"
+
+      case x @ ShowCurrentUser(yields,_) =>
         val (y: String, r: String) = showClausesAsString(yields)
         s"${x.name}$y$r"
 
@@ -338,19 +350,19 @@ case class Prettifier(
       case x @ RevokeRolesFromUsers(roleNames, userNames) =>
         s"${x.name} ${roleNames.map(Prettifier.escapeName).mkString(", ")} FROM ${userNames.map(Prettifier.escapeName).mkString(", ")}"
 
-      case x @ GrantPrivilege(DbmsPrivilege(_), _, _, qualifiers: List[ProcedurePrivilegeQualifier], roleNames) =>
+      case x @ GrantPrivilege(DbmsPrivilege(_), _, _, qualifiers: List[ExecutePrivilegeQualifier], roleNames) =>
         s"${x.name}${Prettifier.extractQualifierString(qualifiers)} ON DBMS TO ${Prettifier.escapeNames(roleNames)}"
 
       case x @ GrantPrivilege(DbmsPrivilege(_), _, _, _, roleNames) =>
         s"${x.name} ON DBMS TO ${Prettifier.escapeNames(roleNames)}"
 
-      case x @ DenyPrivilege(DbmsPrivilege(_), _, _, qualifiers: List[ProcedurePrivilegeQualifier], roleNames) =>
+      case x @ DenyPrivilege(DbmsPrivilege(_), _, _, qualifiers: List[ExecutePrivilegeQualifier], roleNames) =>
         s"${x.name}${Prettifier.extractQualifierString(qualifiers)} ON DBMS TO ${Prettifier.escapeNames(roleNames)}"
 
       case x @ DenyPrivilege(DbmsPrivilege(_), _, _, _, roleNames) =>
         s"${x.name} ON DBMS TO ${Prettifier.escapeNames(roleNames)}"
 
-      case x @ RevokePrivilege(DbmsPrivilege(_), _, _, qualifiers: List[ProcedurePrivilegeQualifier], roleNames, _) =>
+      case x @ RevokePrivilege(DbmsPrivilege(_), _, _, qualifiers: List[ExecutePrivilegeQualifier], roleNames, _) =>
         s"${x.name}${Prettifier.extractQualifierString(qualifiers)} ON DBMS FROM ${Prettifier.escapeNames(roleNames)}"
 
       case x @ RevokePrivilege(DbmsPrivilege(_), _, _, _, roleNames, _) =>
@@ -416,9 +428,14 @@ case class Prettifier(
         val (resourceName, scope) = Prettifier.extractScope(resource, graphScope, qualifier)
         s"${x.name} {$resourceName} ON $scope FROM ${Prettifier.escapeNames(roleNames)}"
 
-      case ShowPrivileges(scope, yields,_) =>
+      case ShowPrivileges(scope, yields, _) =>
         val (y: String, r: String) = showClausesAsString(yields)
         s"SHOW ${Prettifier.extractScope(scope)} PRIVILEGES$y$r"
+
+      case ShowPrivilegeCommands(scope, asRevoke, yields, _) =>
+        val (y: String, r: String) = showClausesAsString(yields)
+        val asCommand = if (asRevoke) " AS REVOKE COMMANDS" else " AS COMMANDS"
+        s"SHOW ${Prettifier.extractScope(scope)} PRIVILEGES$asCommand$y$r"
 
       case x @ ShowDatabase(scope, yields,_) =>
         val (y: String, r: String) = showClausesAsString(yields)
@@ -428,25 +445,25 @@ case class Prettifier(
         }
         s"${x.name}$optionalName$y$r"
 
-      case x @ CreateDatabase(dbName, ifExistsDo) =>
+      case x @ CreateDatabase(dbName, ifExistsDo, waitUntilComplete) =>
         ifExistsDo match {
-          case IfExistsDoNothing | IfExistsInvalidSyntax => s"${x.name} ${Prettifier.escapeName(dbName)} IF NOT EXISTS"
-          case _                                               => s"${x.name} ${Prettifier.escapeName(dbName)}"
+          case IfExistsDoNothing | IfExistsInvalidSyntax => s"${x.name} ${Prettifier.escapeName(dbName)} IF NOT EXISTS${waitUntilComplete.name}"
+          case _                                               => s"${x.name} ${Prettifier.escapeName(dbName)}${waitUntilComplete.name}"
         }
 
-      case x @ DropDatabase(dbName, ifExists, additionalAction) =>
+      case x @ DropDatabase(dbName, ifExists, additionalAction, waitUntilComplete) =>
         (ifExists, additionalAction) match {
-          case (false, DestroyData) => s"${x.name} ${Prettifier.escapeName(dbName)} DESTROY DATA"
-          case (true, DestroyData) => s"${x.name} ${Prettifier.escapeName(dbName)} IF EXISTS DESTROY DATA"
-          case (false, DumpData) => s"${x.name} ${Prettifier.escapeName(dbName)} DUMP DATA"
-          case (true, DumpData) => s"${x.name} ${Prettifier.escapeName(dbName)} IF EXISTS DUMP DATA"
+          case (false, DestroyData) => s"${x.name} ${Prettifier.escapeName(dbName)} DESTROY DATA${waitUntilComplete.name}"
+          case (true, DestroyData) => s"${x.name} ${Prettifier.escapeName(dbName)} IF EXISTS DESTROY DATA${waitUntilComplete.name}"
+          case (false, DumpData) => s"${x.name} ${Prettifier.escapeName(dbName)} DUMP DATA${waitUntilComplete.name}"
+          case (true, DumpData) => s"${x.name} ${Prettifier.escapeName(dbName)} IF EXISTS DUMP DATA${waitUntilComplete.name}"
         }
 
-      case x @ StartDatabase(dbName) =>
-        s"${x.name} ${Prettifier.escapeName(dbName)}"
+      case x @ StartDatabase(dbName, waitUntilComplete) =>
+        s"${x.name} ${Prettifier.escapeName(dbName)}${waitUntilComplete.name}"
 
-      case x @ StopDatabase(dbName) =>
-        s"${x.name} ${Prettifier.escapeName(dbName)}"
+      case x @ StopDatabase(dbName, waitUntilComplete) =>
+        s"${x.name} ${Prettifier.escapeName(dbName)}${waitUntilComplete.name}"
     }
     useString + commandString
   }
@@ -823,15 +840,21 @@ object Prettifier {
   }
 
   def extractQualifierPart(qualifier: List[PrivilegeQualifier]): Option[String] = {
+    def stringifyQualifiedName(nameSpace: Namespace, name: String) = {
+      val namespace = nameSpace.parts.map(ExpressionStringifier.backtick(_, globbing = true)).mkString(".")
+      val prefix = if (namespace.isEmpty) "" else namespace + "."
+      prefix + ExpressionStringifier.backtick(name, globbing = true)
+    }
+
     def stringify: PartialFunction[PrivilegeQualifier,String] = {
       case LabelQualifier(name) => ExpressionStringifier.backtick(name)
       case RelationshipQualifier(name) => ExpressionStringifier.backtick(name)
       case ElementQualifier(name) => ExpressionStringifier.backtick(name)
       case UserQualifier(name) => escapeName(name)
       case ProcedureQualifier(nameSpace, procedureName) =>
-        val namespace = nameSpace.parts.map(ExpressionStringifier.backtick(_, globbing = true)).mkString(".")
-        val prefix = if (namespace.isEmpty) "" else namespace + "."
-        prefix + ExpressionStringifier.backtick(procedureName.name, globbing = true)
+        stringifyQualifiedName(nameSpace, procedureName.name)
+      case FunctionQualifier(nameSpace, functionName) =>
+        stringifyQualifiedName(nameSpace, functionName.name)
     }
 
     qualifier match {
@@ -850,6 +873,8 @@ object Prettifier {
       case AllDatabasesQualifier() :: Nil => None
       case p@ProcedureQualifier(_, _) :: _ => Some(p.map(stringify).mkString(", "))
       case ProcedureAllQualifier() :: Nil => Some("*")
+      case p@FunctionQualifier(_, _) :: _ => Some(p.map(stringify).mkString(", "))
+      case FunctionAllQualifier() :: Nil => Some("*")
       case _ => Some("<unknown>")
     }
   }

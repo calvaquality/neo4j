@@ -26,6 +26,10 @@ import org.neo4j.cypher.internal.ast.Clause
 import org.neo4j.cypher.internal.ast.GraphSelection
 import org.neo4j.cypher.internal.ast.Statement
 import org.neo4j.cypher.internal.frontend.phases.BaseState
+import org.neo4j.cypher.internal.util.Foldable
+import org.neo4j.cypher.internal.util.InputPosition
+import org.neo4j.cypher.internal.util.Rewritable
+import org.neo4j.cypher.internal.util.Rewritable.IteratorEq
 import org.neo4j.cypher.rendering.QueryRenderer
 import org.neo4j.fabric.util.Folded
 import org.neo4j.fabric.util.Folded.FoldableOps
@@ -35,7 +39,7 @@ import org.neo4j.graphdb.ExecutionPlanDescription
 import scala.collection.JavaConverters.mapAsJavaMapConverter
 import scala.collection.JavaConverters.setAsJavaSet
 
-sealed trait Fragment {
+sealed trait Fragment extends Fragment.RewritingSupport {
   /** Columns available to this fragment from an applied argument */
   def argumentColumns: Seq[String]
   /** Columns imported from the argument */
@@ -44,6 +48,8 @@ sealed trait Fragment {
   def outputColumns: Seq[String]
   /** ExecutionPlanDescription */
   def description: Fragment.Description
+  /* Original input position */
+  def pos: InputPosition
 }
 
 object Fragment {
@@ -78,11 +84,14 @@ object Fragment {
   ) extends Fragment.Chain {
     val outputColumns: Seq[String] = Seq.empty
     val description: Fragment.Description = Description.InitDesc(this)
+    val pos: InputPosition = InputPosition.NONE
   }
 
   final case class Apply(
     input: Fragment.Chain,
     inner: Fragment,
+  )(
+    val pos: InputPosition
   ) extends Fragment.Segment {
     val outputColumns: Seq[String] = Columns.combine(input.outputColumns, inner.outputColumns)
     val description: Fragment.Description = Description.ApplyDesc(this)
@@ -93,6 +102,8 @@ object Fragment {
     distinct: Boolean,
     lhs: Fragment,
     rhs: Fragment.Chain,
+  )(
+    val pos: InputPosition
   ) extends Fragment {
     val outputColumns: Seq[String] = rhs.outputColumns
     val argumentColumns: Seq[String] = input.argumentColumns
@@ -104,6 +115,8 @@ object Fragment {
     input: Fragment.Chain,
     clauses: Seq[ast.Clause],
     outputColumns: Seq[String],
+  )(
+    val pos: InputPosition
   ) extends Fragment.Segment {
     val parameters: Map[String, String] = Columns.asParamMappings(importColumns)
     val description: Fragment.Description = Description.LeafDesc(this)
@@ -124,6 +137,7 @@ object Fragment {
     val description: Fragment.Description = Description.ExecDesc(this)
     val queryType: QueryType = QueryType.of(query)
     val statementType: StatementType = StatementType.of(query)
+    def pos: InputPosition = query.position
   }
 
   final case class RemoteQuery(
@@ -137,6 +151,7 @@ object Fragment {
   ) extends Command {
     val description: Description = Description.CommandDesc(this, "Command")
     val queryType: QueryType = QueryType.of(command)
+    def pos: InputPosition = command.position
   }
 
   final case class AdminCommand(
@@ -145,6 +160,25 @@ object Fragment {
   ) extends Command {
     val description: Description = Description.CommandDesc(this, "AdminCommand")
     val queryType: QueryType = QueryType.of(command)
+    def pos: InputPosition = command.position
+  }
+
+  trait RewritingSupport extends Product with Foldable with Rewritable {
+    protected def pos: InputPosition
+
+    def dup(children: Seq[AnyRef]): this.type =
+      if (children.iterator eqElements this.children)
+        this
+      else {
+        val constructor = Rewritable.copyConstructor(this)
+        val params = constructor.getParameterTypes
+        val args = children.toVector
+        val hasExtraParam = params.length == args.length + 1
+        val lastParamIsPos = params.last.isAssignableFrom(classOf[InputPosition])
+        val ctorArgs = if (hasExtraParam && lastParamIsPos) args :+ this.pos else args
+        val duped = constructor.invoke(this, ctorArgs: _*)
+        duped.asInstanceOf[this.type]
+      }
   }
 
   private def hasExecutableClauses(clauses: Seq[ast.Clause]) =

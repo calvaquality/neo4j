@@ -80,6 +80,7 @@ import org.neo4j.internal.kernel.api.helpers.RelationshipSelections.outgoingCurs
 import org.neo4j.internal.kernel.api.procs.ProcedureCallContext
 import org.neo4j.internal.schema.ConstraintDescriptor
 import org.neo4j.internal.schema.ConstraintType
+import org.neo4j.internal.schema.IndexConfig
 import org.neo4j.internal.schema.IndexDescriptor
 import org.neo4j.internal.schema.IndexPrototype
 import org.neo4j.internal.schema.SchemaDescriptor
@@ -185,6 +186,10 @@ sealed class TransactionBoundQueryContext(val transactionalContext: Transactiona
 
   override def isLabelSetOnNode(label: Int, node: Long, nodeCursor: NodeCursor): Boolean = {
     CursorUtils.nodeHasLabel(reads(), nodeCursor, node, label)
+  }
+
+  override def isTypeSetOnRelationship(typ: Int, id: Long, relationshipCursor: RelationshipScanCursor): Boolean = {
+    CursorUtils.relationshipHasType(reads(), relationshipCursor, id, typ)
   }
 
   override def getOrCreateLabelId(labelName: String): Int = {
@@ -423,6 +428,30 @@ sealed class TransactionBoundQueryContext(val transactionalContext: Transactiona
     }
   }
 
+  override def nodeGetOutgoingDegreeWithMax(maxDegree: Int, node: Long, nodeCursor: NodeCursor): Int = {
+    reads().singleNode(node, nodeCursor)
+    if (!nodeCursor.next()) 0
+    else {
+      Nodes.countWithMax(maxDegree, nodeCursor, org.neo4j.graphdb.Direction.OUTGOING)
+    }
+  }
+
+  override def nodeGetIncomingDegreeWithMax(maxDegree: Int, node: Long, nodeCursor: NodeCursor): Int = {
+    reads().singleNode(node, nodeCursor)
+    if (!nodeCursor.next()) 0
+    else {
+      Nodes.countWithMax(maxDegree, nodeCursor, org.neo4j.graphdb.Direction.INCOMING)
+    }
+  }
+
+  override def nodeGetTotalDegreeWithMax(maxDegree: Int, node: Long, nodeCursor: NodeCursor): Int = {
+    reads().singleNode(node, nodeCursor)
+    if (!nodeCursor.next()) 0
+    else {
+      Nodes.countWithMax(maxDegree, nodeCursor, org.neo4j.graphdb.Direction.BOTH)
+    }
+  }
+
   override def nodeGetOutgoingDegree(node: Long, nodeCursor: NodeCursor): Int = {
     reads().singleNode(node, nodeCursor)
     if (!nodeCursor.next()) 0
@@ -439,6 +468,30 @@ sealed class TransactionBoundQueryContext(val transactionalContext: Transactiona
     reads().singleNode(node, nodeCursor)
     if (!nodeCursor.next()) 0
     else Nodes.countAll(nodeCursor)
+  }
+
+  override def nodeGetOutgoingDegreeWithMax(maxDegree: Int, node: Long, relationship: Int, nodeCursor: NodeCursor): Int = {
+    reads().singleNode(node, nodeCursor)
+    if (!nodeCursor.next()) 0
+    else {
+      Nodes.countWithMax(maxDegree, nodeCursor, relationship, org.neo4j.graphdb.Direction.OUTGOING)
+    }
+  }
+
+  override def nodeGetIncomingDegreeWithMax(maxDegree: Int, node: Long, relationship: Int, nodeCursor: NodeCursor): Int = {
+    reads().singleNode(node, nodeCursor)
+    if (!nodeCursor.next()) 0
+    else {
+      Nodes.countWithMax(maxDegree, nodeCursor, relationship, org.neo4j.graphdb.Direction.INCOMING)
+    }
+  }
+
+  override def nodeGetTotalDegreeWithMax(maxDegree: Int, node: Long, relationship: Int, nodeCursor: NodeCursor): Int = {
+    reads().singleNode(node, nodeCursor)
+    if (!nodeCursor.next()) 0
+    else {
+      Nodes.countWithMax(maxDegree, nodeCursor, relationship, org.neo4j.graphdb.Direction.BOTH)
+    }
   }
 
   override def nodeGetOutgoingDegree(node: Long, relationship: Int, nodeCursor: NodeCursor): Int = {
@@ -733,10 +786,13 @@ sealed class TransactionBoundQueryContext(val transactionalContext: Transactiona
     ids
   }
 
-  override def addIndexRule(labelId: Int, propertyKeyIds: Seq[Int], name: Option[String]): IndexDescriptor = {
+  override def addIndexRule(labelId: Int, propertyKeyIds: Seq[Int], name: Option[String], provider: Option[String], indexConfig: IndexConfig): IndexDescriptor = {
     val ktx = transactionalContext.kernelTransaction
     try {
-      ktx.schemaWrite().indexCreate(SchemaDescriptor.forLabel(labelId, propertyKeyIds: _*), name.orNull)
+      if (provider.isEmpty)
+        ktx.schemaWrite().indexCreate(SchemaDescriptor.forLabel(labelId, propertyKeyIds: _*), indexConfig, name.orNull)
+      else
+        ktx.schemaWrite().indexCreate(SchemaDescriptor.forLabel(labelId, propertyKeyIds: _*), provider.get, indexConfig, name.orNull)
     } catch {
       case e: EquivalentSchemaRuleAlreadyExistsException =>
         val indexReference = ktx.schemaRead().index(SchemaDescriptor.forLabel(labelId, propertyKeyIds: _*)).next()
@@ -765,17 +821,31 @@ sealed class TransactionBoundQueryContext(val transactionalContext: Transactiona
     transactionalContext.kernelTransaction.schemaRead().constraintsGetForSchema(SchemaDescriptor.forLabel(entityId, properties: _*)).asScala.exists(matchFn) ||
       transactionalContext.kernelTransaction.schemaRead().constraintsGetForSchema(SchemaDescriptor.forRelType(entityId, properties: _*)).asScala.exists(matchFn)
 
-  override def createNodeKeyConstraint(labelId: Int, propertyKeyIds: Seq[Int], name: Option[String]): Unit =
-    transactionalContext.kernelTransaction.schemaWrite().nodeKeyConstraintCreate(
-      IndexPrototype.uniqueForSchema(SchemaDescriptor.forLabel(labelId, propertyKeyIds: _*)).withName(name.orNull))
+  override def createNodeKeyConstraint(labelId: Int,
+                                       propertyKeyIds: Seq[Int],
+                                       name: Option[String],
+                                       provider: Option[String],
+                                       indexConfig: IndexConfig): Unit = {
+    val schemaWrite = transactionalContext.kernelTransaction.schemaWrite()
+    val indexPrototype = if (provider.isEmpty) IndexPrototype.uniqueForSchema(SchemaDescriptor.forLabel(labelId, propertyKeyIds: _*))
+                         else IndexPrototype.uniqueForSchema(SchemaDescriptor.forLabel(labelId, propertyKeyIds: _*), schemaWrite.indexProviderByName(provider.get))
+    schemaWrite.nodeKeyConstraintCreate(indexPrototype.withName(name.orNull).withIndexConfig(indexConfig))
+  }
 
   override def dropNodeKeyConstraint(labelId: Int, propertyKeyIds: Seq[Int]): Unit =
     transactionalContext.kernelTransaction.schemaWrite()
       .constraintDrop(SchemaDescriptor.forLabel(labelId, propertyKeyIds: _*), ConstraintType.UNIQUE_EXISTS)
 
-  override def createUniqueConstraint(labelId: Int, propertyKeyIds: Seq[Int], name: Option[String]): Unit =
-    transactionalContext.kernelTransaction.schemaWrite().uniquePropertyConstraintCreate(
-      IndexPrototype.uniqueForSchema(SchemaDescriptor.forLabel(labelId, propertyKeyIds: _*)).withName(name.orNull))
+  override def createUniqueConstraint(labelId: Int,
+                                      propertyKeyIds: Seq[Int],
+                                      name: Option[String],
+                                      provider: Option[String],
+                                      indexConfig: IndexConfig): Unit = {
+    val schemaWrite = transactionalContext.kernelTransaction.schemaWrite()
+    val indexPrototype = if (provider.isEmpty) IndexPrototype.uniqueForSchema(SchemaDescriptor.forLabel(labelId, propertyKeyIds: _*))
+                         else IndexPrototype.uniqueForSchema(SchemaDescriptor.forLabel(labelId, propertyKeyIds: _*), schemaWrite.indexProviderByName(provider.get))
+    schemaWrite.uniquePropertyConstraintCreate(indexPrototype.withName(name.orNull).withIndexConfig(indexConfig))
+  }
 
   override def dropUniqueConstraint(labelId: Int, propertyKeyIds: Seq[Int]): Unit =
     transactionalContext.kernelTransaction.schemaWrite()

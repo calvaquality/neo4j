@@ -115,23 +115,33 @@ public class GlobalProceduresRegistry extends LifecycleAdapter implements Global
     }
 
     /**
-     * Register a new procedure. This method must not be called concurrently with {@link #procedure(QualifiedName)}.
+     * Register a new function. This method must not be called concurrently with {@link #function(QualifiedName)}.
      * @param function the function.
      */
     @Override
     public void register( CallableUserFunction function, boolean overrideCurrentImplementation ) throws ProcedureException
     {
-        registry.register( function, overrideCurrentImplementation );
+        registry.register( function, overrideCurrentImplementation, false );
     }
 
     /**
-     * Register a new procedure. This method must not be called concurrently with {@link #procedure(QualifiedName)}.
+     * Register a new built in function. This method must not be called concurrently with {@link #function(QualifiedName)}.
+     * @param function the function.
+     */
+    @Override
+    public void registerBuiltIn( CallableUserFunction function ) throws ProcedureException
+    {
+        registry.register( function, false, true );
+    }
+
+    /**
+     * Register a new aggregation function. This method must not be called concurrently with {@link #aggregationFunction(QualifiedName)}.
      * @param function the function.
      */
     @Override
     public void register( CallableUserAggregationFunction function, boolean overrideCurrentImplementation ) throws ProcedureException
     {
-        registry.register( function, overrideCurrentImplementation );
+        registry.register( function, overrideCurrentImplementation, false );
     }
 
     /**
@@ -297,6 +307,30 @@ public class GlobalProceduresRegistry extends LifecycleAdapter implements Global
     public UserFunctionHandle aggregationFunction( QualifiedName name )
     {
         return registry.aggregationFunction( name );
+    }
+
+    @Override
+    public int[] getIdsOfFunctionsMatching( Predicate<CallableUserFunction> predicate )
+    {
+        return registry.getIdsOfFunctionsMatching( predicate );
+    }
+
+    @Override
+    public int[] getIdsOfAggregatingFunctionsMatching( Predicate<CallableUserAggregationFunction> predicate )
+    {
+        return registry.getIdsOfAggregatingFunctionsMatching( predicate );
+    }
+
+    @Override
+    public boolean isBuiltInFunction( int id )
+    {
+        return registry.isBuiltInFunction( id );
+    }
+
+    @Override
+    public boolean isBuiltInAggregatingFunction( int id )
+    {
+        return registry.isBuiltInAggregatingFunction( id );
     }
 
     @Override

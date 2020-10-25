@@ -21,10 +21,10 @@ package org.neo4j.cypher.internal.runtime;
 
 import java.util.Optional;
 
-import org.neo4j.util.CalledFromGeneratedCode;
 import org.neo4j.internal.kernel.api.NodeCursor;
 import org.neo4j.internal.kernel.api.PropertyCursor;
 import org.neo4j.internal.kernel.api.RelationshipScanCursor;
+import org.neo4j.util.CalledFromGeneratedCode;
 import org.neo4j.values.AnyValue;
 import org.neo4j.values.storable.TextValue;
 import org.neo4j.values.storable.Value;
@@ -74,6 +74,18 @@ public interface DbAccess extends EntityById
             RelationshipScanCursor relationshipScanCursor,
             PropertyCursor propertyCursor );
 
+    int nodeGetOutgoingDegreeWithMax( int maxDegree, long node, NodeCursor nodeCursor );
+
+    int nodeGetOutgoingDegreeWithMax( int maxDegree, long node, int relationship, NodeCursor nodeCursor );
+
+    int nodeGetIncomingDegreeWithMax( int maxDegree, long node, NodeCursor nodeCursor );
+
+    int nodeGetIncomingDegreeWithMax( int maxDegree, long node, int relationship, NodeCursor nodeCursor );
+
+    int nodeGetTotalDegreeWithMax( int maxDegree, long node, NodeCursor nodeCursor );
+
+    int nodeGetTotalDegreeWithMax( int maxDegree, long node, int relationship, NodeCursor nodeCursor );
+
     int nodeGetOutgoingDegree( long node, NodeCursor nodeCursor );
 
     int nodeGetOutgoingDegree( long node, int relationship, NodeCursor nodeCursor );
@@ -93,6 +105,8 @@ public interface DbAccess extends EntityById
     TextValue getTypeForRelationship( long id, RelationshipScanCursor relationshipCursor );
 
     boolean isLabelSetOnNode( int label, long id, NodeCursor nodeCursor );
+
+    boolean isTypeSetOnRelationship( int typ, long id, RelationshipScanCursor relationshipCursor );
 
     String getPropertyKeyName( int token );
 

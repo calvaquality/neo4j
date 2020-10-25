@@ -72,6 +72,9 @@ trait Literals extends Parser
   def FunctionName: Rule1[expressions.FunctionName] =
     rule("a function name") { SymbolicNameString ~~>> (expressions.FunctionName(_) ) }.memoMismatches
 
+  def GlobbedFunctionName: Rule1[expressions.FunctionName] =
+    rule("a globbed function name") { GlobbedSymbolicNameString ~~>> (expressions.FunctionName(_) ) }.memoMismatches
+
   def PropertyKeyName: Rule1[expressions.PropertyKeyName] =
     rule("a property key name") { SymbolicNameString ~~>> (expressions.PropertyKeyName(_) ) }.memoMismatches
 
@@ -85,6 +88,9 @@ trait Literals extends Parser
 
   def RelTypeName: Rule1[expressions.RelTypeName] =
     rule("a rel type name") { SymbolicNameString ~~>> (expressions.RelTypeName(_) ) }.memoMismatches
+
+  def LabelOrRelTypeName: Rule1[expressions.LabelOrRelTypeName] =
+    rule("a label or a rel type name") { SymbolicNameString ~~>> (expressions.LabelOrRelTypeName(_) ) }.memoMismatches
 
   def Operator: Rule1[expressions.Variable] = rule {
     OpChar ~ zeroOrMore(OpCharTail) ~>>> (expressions.Variable(_: String)) ~ !OpCharTail
@@ -169,6 +175,14 @@ trait Literals extends Parser
 
   def RelType: Rule1[expressions.RelTypeName] = rule {
     ((operator(":") ~~ RelTypeName) memoMismatches).suppressSubnodes
+  }
+
+  def NodeLabelsOrRelTypes: Rule1[Seq[expressions.LabelOrRelTypeName]] = rule("node labels or rel types") {
+    (oneOrMore(NodeLabelOrRelType, separator = WS) memoMismatches).suppressSubnodes
+  }
+
+  def NodeLabelOrRelType: Rule1[expressions.LabelOrRelTypeName] = rule {
+    ((operator(":") ~~ LabelOrRelTypeName) memoMismatches).suppressSubnodes
   }
 
   def StringLiteral: Rule1[expressions.StringLiteral] = rule("\"...string...\"") {

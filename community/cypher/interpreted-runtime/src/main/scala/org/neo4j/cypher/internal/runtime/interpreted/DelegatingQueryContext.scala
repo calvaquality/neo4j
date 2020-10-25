@@ -52,6 +52,7 @@ import org.neo4j.internal.kernel.api.TokenRead
 import org.neo4j.internal.kernel.api.Write
 import org.neo4j.internal.kernel.api.procs.ProcedureCallContext
 import org.neo4j.internal.schema.ConstraintDescriptor
+import org.neo4j.internal.schema.IndexConfig
 import org.neo4j.internal.schema.IndexDescriptor
 import org.neo4j.kernel.api.KernelTransaction
 import org.neo4j.kernel.database.NamedDatabaseId
@@ -154,7 +155,8 @@ abstract class DelegatingQueryContext(val inner: QueryContext) extends QueryCont
     inner.getOrCreatePropertyKeyIds(propertyKeys)
   }
 
-  override def addIndexRule(labelId: Int, propertyKeyIds: Seq[Int], name: Option[String]): IndexDescriptor = singleDbHit(inner.addIndexRule(labelId, propertyKeyIds, name))
+  override def addIndexRule(labelId: Int, propertyKeyIds: Seq[Int], name: Option[String], provider: Option[String], indexConfig: IndexConfig): IndexDescriptor =
+    singleDbHit(inner.addIndexRule(labelId, propertyKeyIds, name, provider, indexConfig))
 
   override def dropIndexRule(labelId: Int, propertyKeyIds: Seq[Int]): Unit = singleDbHit(inner.dropIndexRule(labelId, propertyKeyIds))
 
@@ -211,14 +213,14 @@ abstract class DelegatingQueryContext(val inner: QueryContext) extends QueryCont
     map
   }
 
-  override def createNodeKeyConstraint(labelId: Int, propertyKeyIds: Seq[Int], name: Option[String]): Unit =
-    singleDbHit(inner.createNodeKeyConstraint(labelId, propertyKeyIds, name))
+  override def createNodeKeyConstraint(labelId: Int, propertyKeyIds: Seq[Int], name: Option[String], provider: Option[String], indexConfig: IndexConfig): Unit =
+    singleDbHit(inner.createNodeKeyConstraint(labelId, propertyKeyIds, name, provider, indexConfig))
 
   override def dropNodeKeyConstraint(labelId: Int, propertyKeyIds: Seq[Int]): Unit =
     singleDbHit(inner.dropNodeKeyConstraint(labelId, propertyKeyIds))
 
-  override def createUniqueConstraint(labelId: Int, propertyKeyIds: Seq[Int], name: Option[String]): Unit =
-    singleDbHit(inner.createUniqueConstraint(labelId, propertyKeyIds, name))
+  override def createUniqueConstraint(labelId: Int, propertyKeyIds: Seq[Int], name: Option[String], provider: Option[String], indexConfig: IndexConfig): Unit =
+    singleDbHit(inner.createUniqueConstraint(labelId, propertyKeyIds, name, provider, indexConfig))
 
   override def dropUniqueConstraint(labelId: Int, propertyKeyIds: Seq[Int]): Unit =
     singleDbHit(inner.dropUniqueConstraint(labelId, propertyKeyIds))
@@ -250,6 +252,18 @@ abstract class DelegatingQueryContext(val inner: QueryContext) extends QueryCont
 
   override def getImportURL(url: URL): Either[String,URL] = inner.getImportURL(url)
 
+  override def nodeGetOutgoingDegreeWithMax(maxDegree: Int, node: Long, nodeCursor: NodeCursor): Int = singleDbHit(inner.nodeGetOutgoingDegreeWithMax(maxDegree, node, nodeCursor))
+
+  override def nodeGetOutgoingDegreeWithMax(maxDegree: Int, node: Long, relationship: Int, nodeCursor: NodeCursor): Int = singleDbHit(inner.nodeGetOutgoingDegreeWithMax(maxDegree, node, relationship, nodeCursor))
+
+  override def nodeGetIncomingDegreeWithMax(maxDegree: Int, node: Long, nodeCursor: NodeCursor): Int = singleDbHit(inner.nodeGetIncomingDegreeWithMax(maxDegree, node, nodeCursor))
+
+  override def nodeGetIncomingDegreeWithMax(maxDegree: Int, node: Long, relationship: Int, nodeCursor: NodeCursor): Int = singleDbHit(inner.nodeGetIncomingDegreeWithMax(maxDegree, node, relationship, nodeCursor))
+
+  override def nodeGetTotalDegreeWithMax(maxDegree: Int, node: Long, nodeCursor: NodeCursor): Int = singleDbHit(inner.nodeGetTotalDegreeWithMax(maxDegree, node, nodeCursor))
+
+  override def nodeGetTotalDegreeWithMax(maxDegree: Int, node: Long, relationship: Int, nodeCursor: NodeCursor): Int = singleDbHit(inner.nodeGetTotalDegreeWithMax(maxDegree, node, relationship, nodeCursor))
+
   override def nodeGetOutgoingDegree(node: Long, nodeCursor: NodeCursor): Int = singleDbHit(inner.nodeGetOutgoingDegree(node, nodeCursor))
 
   override def nodeGetOutgoingDegree(node: Long, relationship: Int, nodeCursor: NodeCursor): Int = singleDbHit(inner.nodeGetOutgoingDegree(node, relationship, nodeCursor))
@@ -265,6 +279,9 @@ abstract class DelegatingQueryContext(val inner: QueryContext) extends QueryCont
   override def nodeHasCheapDegrees(node: Long, nodeCursor: NodeCursor): Boolean = singleDbHit(inner.nodeHasCheapDegrees(node, nodeCursor))
 
   override def isLabelSetOnNode(label: Int, node: Long, nodeCursor: NodeCursor): Boolean = singleDbHit(inner.isLabelSetOnNode(label, node, nodeCursor))
+
+  override def isTypeSetOnRelationship(typ: Int, id: Long, relationshipCursor: RelationshipScanCursor): Boolean =
+    singleDbHit(inner.isTypeSetOnRelationship(typ, id, relationshipCursor))
 
   override def nodeCountByCountStore(labelId: Int): Long = singleDbHit(inner.nodeCountByCountStore(labelId))
 

@@ -89,6 +89,7 @@ public class GraphDatabaseSettings implements SettingsDeclaration
     public static final String DEFAULT_DATA_DIR_NAME = "data";
     public static final String DEFAULT_DATABASES_ROOT_DIR_NAME = "databases";
     public static final String DEFAULT_TX_LOGS_ROOT_DIR_NAME = "transactions";
+    public static final String DEFAULT_SCRIPT_FOLDER = "scripts";
     public static final String DEFAULT_DUMPS_DIR_NAME = "dumps";
 
     public static final int DEFAULT_ROUTING_CONNECTOR_PORT = 7688;
@@ -116,6 +117,11 @@ public class GraphDatabaseSettings implements SettingsDeclaration
             newBuilder( "dbms.directories.transaction.logs.root", PATH, Path.of( DEFAULT_TX_LOGS_ROOT_DIR_NAME ) )
                     .setDependency( data_directory ).immutable().build();
 
+    @Description( "Root location where Neo4j will store scripts for configured databases." )
+    public static final Setting<Path> script_root_path =
+            newBuilder( "dbms.directories.script.root", PATH, Path.of( DEFAULT_SCRIPT_FOLDER ) )
+                    .setDependency( data_directory ).immutable().build();
+
     @Description( "Root location where Neo4j will store database dumps optionally produced when dropping said databases." )
     public static final Setting<Path> database_dumps_root_path =
             newBuilder( "dbms.directories.dumps.root", PATH, Path.of( DEFAULT_DUMPS_DIR_NAME ) )
@@ -141,7 +147,9 @@ public class GraphDatabaseSettings implements SettingsDeclaration
             "The `high_limit` format is available for Enterprise Edition only. " +
             "It is required if you have a graph that is larger than 34 billion nodes, 34 billion relationships, or 68 billion properties. " +
             "A change of the record format is irreversible. " +
-            "Certain operations may suffer from a performance penalty of up to 10%, which is why this format is not switched on by default." )
+            "Certain operations may suffer from a performance penalty of up to 10%, which is why this format is not switched on by default. " +
+            "However, if you want to change the configured record format value, you must also set `dbms.allow_upgrade=true`, " +
+            "because the setting implies a one-way store format migration." )
     public static final Setting<String> record_format = newBuilder( "dbms.record_format", STRING, "" ).build();
 
     @Description( "Whether to allow a system graph upgrade to happen automatically in single instance mode (dbms.mode=SINGLE). " +
@@ -515,18 +523,17 @@ public class GraphDatabaseSettings implements SettingsDeclaration
             newBuilder( "dbms.index.default_schema_provider", STRING, SchemaIndex.NATIVE_BTREE10.toString() ).build();
 
     // Store settings
-    @Description( "Make Neo4j keep the logical transaction logs for being able to backup the database. " +
-            "Can be used for specifying the threshold to prune logical logs after. For example \"10 days\" will " +
-            "prune logical logs that only contains transactions older than 10 days from the current time, " +
-            "or \"100k txs\" will keep the 100k latest transactions and prune any older transactions." )
+    @Description( "Tell Neo4j how long logical transaction logs should be kept to backup the database." +
+            "For example, \"10 days\" will prune logical logs that only contain transactions older than 10 days." +
+            "Alternatively, \"100k txs\" will keep the 100k latest transactions from each database and prune any older transactions." )
     public static final Setting<String> keep_logical_logs = newBuilder( "dbms.tx_log.rotation.retention_policy", STRING, "7 days" )
                     .dynamic()
                     .addConstraint( SettingConstraints.matches( "^(true|keep_all|false|keep_none|(\\d+[KkMmGg]?( (files|size|txs|entries|hours|days))))$",
-                            "must be `true`, `false` or of format `<number><optional unit> <type>`. " +
-                                    "Valid units are `k`, `M` and `G`. " +
+                            "Must be `true` or `keep_all`, `false` or `keep_none`, or of format `<number><optional unit> <type>`. " +
+                                    "Valid units are `K`, `M` and `G`. " +
                                     "Valid types are `files`, `size`, `txs`, `entries`, `hours` and `days`. " +
-                                    "For example, `100M size` will limiting logical log space on disk to 100Mb," +
-                                    " or `200k txs` will limiting the number of transactions to keep to 200 000" ) )
+                                    "For example, `100M size` will limit logical log space on disk to 100MB per database," +
+                                    "and `200K txs` will limit the number of transactions kept to 200 000 per database." ) )
                     .build();
 
     @Description( "Specifies at which file size the logical log will auto-rotate. Minimum accepted value is 128 KiB. " )
@@ -755,14 +762,13 @@ public class GraphDatabaseSettings implements SettingsDeclaration
 
     @Deprecated( since = "4.2.0", forRemoval = true )
     @Description( "The default role that can execute all procedures and user-defined functions that are not covered " +
-            "by the `" + "dbms.security.procedures.roles" + "` setting. If the `" + "dbms.security.procedures.default_allowed" +
-            "` setting is the empty string (default), procedures will be executed according to the same security " +
-            "rules as normal Cypher statements. " +
-            "This setting (if not empty string) will be translated to 'GRANT EXECUTE BOOSTED PROCEDURE *' for that role. " +
-            "If `" + "dbms.security.procedures.roles" + "`is not empty, any procedure that this role is not mapped to will result in a " +
-            "'DENY EXECUTE BOOSTED PROCEDURE procedure' for this role. " +
+            "by the `" + "dbms.security.procedures.roles" + "` setting. " +
+            "This setting (if not empty string) will be translated to 'GRANT EXECUTE BOOSTED PROCEDURE *' " +
+            "and 'GRANT EXECUTE BOOSTED FUNCTION *' for that role. " +
+            "If `" + "dbms.security.procedures.roles" + "`is not empty, any procedure or function that this role is not mapped to will result in a " +
+            "'DENY EXECUTE BOOSTED PROCEDURE name' and 'DENY EXECUTE BOOSTED FUNCTION name' for this role. " +
             "Any privilege mapped in this way cannot be revoked, instead the config must be changed and will take effect after a restart." +
-            "Deprecated: Replaced by EXECUTE PROCEDURE and EXECUTE BOOSTED PROCEDURE privileges." )
+            "Deprecated: Replaced by EXECUTE PROCEDURE, EXECUTE BOOSTED PROCEDURE, EXECUTE FUNCTION and EXECUTE BOOSTED FUNCTION privileges." )
     public static final Setting<String> default_allowed = newBuilder( "dbms.security.procedures.default_allowed", STRING, "" ).build();
 
     @Deprecated( since = "4.2.0", forRemoval = true )
@@ -773,9 +779,10 @@ public class GraphDatabaseSettings implements SettingsDeclaration
             "all procedures in the `apoc.load` namespace that starts with `json` and the role `TriggerHappy` " +
             "to execute the specific procedure `apoc.trigger.add`. Procedures not matching any of these " +
             "patterns will be subject to the `" + "dbms.security.procedures.default_allowed" + "` setting. " +
-            "This setting (if not empty string) will be translated to 'GRANT EXECUTE BOOSTED PROCEDURE procedure' privileges for the mapped roles. " +
+            "This setting (if not empty string) will be translated to 'GRANT EXECUTE BOOSTED PROCEDURE name' and " +
+            "'GRANT EXECUTE BOOSTED FUNCTION name' privileges for the mapped roles. " +
             "Any privilege mapped in this way cannot be revoked, instead the config must be changed and will take effect after a restart." +
-            "Deprecated: Replaced by EXECUTE PROCEDURE and EXECUTE BOOSTED PROCEDURE privileges." )
+            "Deprecated: Replaced by EXECUTE PROCEDURE, EXECUTE BOOSTED PROCEDURE, EXECUTE FUNCTION and EXECUTE BOOSTED FUNCTION privileges." )
     public static final Setting<String> procedure_roles = newBuilder( "dbms.security.procedures.roles", STRING, "" ).build();
 
     @Description( "Default network interface to listen for incoming connections. " +
