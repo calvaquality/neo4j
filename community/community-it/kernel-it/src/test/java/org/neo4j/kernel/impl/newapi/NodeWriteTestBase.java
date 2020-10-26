@@ -32,6 +32,8 @@ import org.neo4j.kernel.api.KernelTransaction;
 import org.neo4j.values.storable.Value;
 import org.neo4j.values.storable.Values;
 
+import java.time.LocalDateTime;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -39,6 +41,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 import static org.neo4j.graphdb.Label.label;
+import static org.neo4j.values.storable.LocalDateTimeValue.localDateTime;
 import static org.neo4j.values.storable.Values.NO_VALUE;
 import static org.neo4j.values.storable.Values.intValue;
 import static org.neo4j.values.storable.Values.stringValue;
@@ -228,6 +231,31 @@ public abstract class NodeWriteTestBase<G extends KernelAPIWriteTestSupport> ext
         // Then
         assertProperty( node, propertyKey, "hello" );
     }
+
+
+    @Test
+    void shouldAddTimePeriodPropertyToNode() throws Exception
+    {
+        // Given
+        long node = createNode();
+        final String startDateProperty = "startDate";
+        final String endDateProperty = "endDate";
+        LocalDateTime localDateTime = LocalDateTime.now();
+        // When
+        try ( KernelTransaction tx = beginTransaction() )
+        {
+            int startDatePropertyToken = tx.token().propertyKeyGetOrCreateForName( startDateProperty );
+            int endDatePropertyToken = tx.token().propertyKeyGetOrCreateForName( endDateProperty );
+            assertThat( tx.dataWrite().nodeSetProperty( node, startDatePropertyToken, localDateTime(localDateTime)) ).isEqualTo( NO_VALUE );
+            assertThat( tx.dataWrite().nodeSetProperty( node, endDatePropertyToken, localDateTime(LocalDateTime.MAX)) ).isEqualTo( NO_VALUE );
+            tx.commit();
+        }
+
+        // Then
+        assertProperty( node, startDateProperty, localDateTime );
+        assertProperty( node, endDateProperty, LocalDateTime.MAX );
+    }
+
 
     @Test
     void shouldRollbackSetNodeProperty() throws Exception
